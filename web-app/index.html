@@ -198,6 +198,40 @@
                     </div>
                 </div>
 
+                <!-- Prediction Bar -->
+                <div id="prediction-bar" class="prediction-bar glass-panel">
+                    <div class="prediction-bar-header">
+                        <span><i class="fa-solid fa-chart-mixed text-neon-violet"></i> Ay Sonu Tahmini</span>
+                        <span id="prediction-status-badge" class="badge badge-blue">Yükleniyor...</span>
+                    </div>
+                    <div class="prediction-bar-metrics">
+                        <div class="pred-metric">
+                            <span>Tahmin (kWh)</span>
+                            <strong id="pred-kwh">-</strong>
+                        </div>
+                        <div class="pred-metric">
+                            <span>Tahmin (TL)</span>
+                            <strong id="pred-cost">-</strong>
+                        </div>
+                        <div class="pred-metric">
+                            <span>Bütçe Kotası</span>
+                            <strong id="pred-quota">-</strong>
+                        </div>
+                        <div class="pred-metric">
+                            <span>Kalan Gün</span>
+                            <strong id="pred-days-remaining">-</strong>
+                        </div>
+                        <div class="pred-metric">
+                            <span>Aktif Tarife</span>
+                            <strong id="pred-tariff-label">-</strong>
+                        </div>
+                        <div class="pred-metric">
+                            <span>Fark (%)</span>
+                            <strong id="pred-overshoot">-</strong>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Main Details Grid Layout (Left: Live appliances, Right: AI + Trends) -->
                 <div class="detail-grid-layout">
                     <!-- Left Column: IoT Appliance Telemetry -->
@@ -211,7 +245,7 @@
                         </div>
                     </div>
 
-                    <!-- Right Column: AI Suggestions and Charts -->
+                    <!-- Right Column: AI Suggestions, Charts, Automation -->
                     <div class="detail-right-column">
                         <!-- AI Recommendations Card -->
                         <div class="ai-recommendations-panel glass-panel">
@@ -229,6 +263,45 @@
                                 <div id="ai-content-box" class="ai-text-content">
                                     <!-- Injected AI suggestion text -->
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Automation Rules Panel -->
+                        <div class="automation-panel glass-panel">
+                            <div class="automation-panel-header">
+                                <h3><i class="fa-solid fa-robot text-neon-blue"></i> IoT Otomasyon Kuralları</h3>
+                                <button class="btn btn-secondary btn-sm" onclick="openAddRuleForm()">
+                                    <i class="fa-solid fa-plus"></i> Kural Ekle
+                                </button>
+                            </div>
+                            <!-- Add Rule Form (hidden by default) -->
+                            <div id="add-rule-form" class="add-rule-form hidden">
+                                <select id="rule-device-type" class="rule-select">
+                                    <option value="*">Tüm Cihazlar</option>
+                                    <option value="AC">Klima (AC)</option>
+                                    <option value="HEATER">İsıtıcı</option>
+                                    <option value="WASHING_MACHINE">Çamaşır Makinesi</option>
+                                    <option value="REFRIGERATOR">Buzdolabı</option>
+                                    <option value="OTHER">Diğer</option>
+                                </select>
+                                <select id="rule-trigger-type" class="rule-select" onchange="updateRuleTriggerUI()">
+                                    <option value="ANOMALY">Anomali Tespitinde</option>
+                                    <option value="BUDGET_80">Bütçe %80 Aşımında</option>
+                                    <option value="BUDGET_100">Bütçe %100 Aşımında</option>
+                                    <option value="WATTAGE_EXCEED">Watt Limiti Aşımında</option>
+                                </select>
+                                <input type="number" id="rule-trigger-value" class="rule-input hidden" placeholder="Eşlik Değeri (W)" min="0">
+                                <select id="rule-action" class="rule-select">
+                                    <option value="SHUTDOWN">Cihazı Kapat (SHUTDOWN)</option>
+                                    <option value="LOG_ONLY">Yalnızca Kaydet (LOG_ONLY)</option>
+                                </select>
+                                <div class="rule-form-actions">
+                                    <button class="btn btn-primary btn-sm" onclick="submitNewRule()">Kaydet</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="closeAddRuleForm()">İptal</button>
+                                </div>
+                            </div>
+                            <div id="automation-rules-list" class="automation-rules-list">
+                                <!-- Rules injected here -->
                             </div>
                         </div>
 

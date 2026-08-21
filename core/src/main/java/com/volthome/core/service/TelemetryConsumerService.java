@@ -36,6 +36,8 @@ public class TelemetryConsumerService {
     private final HomeService homeService;
     private final AnomalyService anomalyService;
     private final BillingRuleService billingRuleService;
+    private final TariffService tariffService;
+    private final AutomationEngine automationEngine;
     private final IgniteClient igniteClient;
     private final HomeRepository homeRepository;
     private final ConsumptionHistoryRepository consumptionHistoryRepository;
@@ -49,6 +51,8 @@ public class TelemetryConsumerService {
     public TelemetryConsumerService(HomeService homeService,
                                     AnomalyService anomalyService,
                                     BillingRuleService billingRuleService,
+                                    TariffService tariffService,
+                                    AutomationEngine automationEngine,
                                     IgniteClient igniteClient,
                                     HomeRepository homeRepository,
                                     ConsumptionHistoryRepository consumptionHistoryRepository,
@@ -60,6 +64,8 @@ public class TelemetryConsumerService {
         this.homeService = homeService;
         this.anomalyService = anomalyService;
         this.billingRuleService = billingRuleService;
+        this.tariffService = tariffService;
+        this.automationEngine = automationEngine;
         this.igniteClient = igniteClient;
         this.homeRepository = homeRepository;
         this.consumptionHistoryRepository = consumptionHistoryRepository;
@@ -129,14 +135,17 @@ public class TelemetryConsumerService {
                             " normal çalışma moduna döndü (" + String.format("%.2f", wattage) + "W).");
                 }
 
-                // 3. Accumulate energy and cost
+                // 3. Accumulate energy and cost using Dynamic Tariff Engine
                 // Assuming telemetry message interval is exactly 2 seconds.
                 // energy_kwh = (watts * seconds) / (3600 * 1000)
-                double deltaKwh = (wattage * 2.0) / (3600.0 * 1000.0);
-                double deltaCost = deltaKwh * liveState.getTariffRate();
+                double deltaKwh  = (wattage * 2.0) / (3_600_000.0);
+                double deltaCost = tariffService.computeIntervalCost(wattage); // dynamic TL cost
 
                 liveState.setCumulativeEnergyKwh(liveState.getCumulativeEnergyKwh() + deltaKwh);
                 liveState.setCumulativeCost(liveState.getCumulativeCost() + deltaCost);
+
+                // Keep tariffRate in liveState in sync with dynamic engine
+                liveState.setTariffRate(tariffService.getCurrentRate());
 
                 // 4. Run billing evaluations (checks thresholds, enforces penalty tariffs)
                 billingRuleService.evaluateBillingRules(liveState);
@@ -152,10 +161,13 @@ public class TelemetryConsumerService {
                     }
                 }
 
-                // 5. Update Ignite cache state
+                // 5. Evaluate user-defined automation rules
+                automationEngine.evaluate(homeId, liveState);
+
+                // 6. Update Ignite cache state
                 getHomeCache().put(homeId, liveState);
 
-                // 6. Broadcast updated state via WebSocket
+                // 7. Broadcast updated state via WebSocket
                 try {
                     String liveStateJson = objectMapper.writeValueAsString(liveState);
                     webSocketHandler.broadcast(liveStateJson);

@@ -459,7 +459,162 @@ async function openHomeDetailModal(id) {
     // One-off load for AI recommendations, chart data, and initial state
     await updateHomeDetails();
     await fetchAndDrawTrendChart(id);
+    await fetchPrediction(id);
+    await fetchAutomationRules(id);
 }
+
+// Fetch month-end prediction
+async function fetchPrediction(homeId) {
+    try {
+        const res = await fetch(`/api/homes/${homeId}/prediction`, { headers: getHeaders() });
+        if (!res.ok) return;
+        const p = await res.json();
+        
+        document.getElementById("pred-kwh").textContent = `${p.predictedKwh} kWh`;
+        document.getElementById("pred-cost").textContent = `${p.predictedCost} TL`;
+        document.getElementById("pred-quota").textContent = `${p.budgetQuota} TL`;
+        document.getElementById("pred-days-remaining").textContent = `${p.daysRemaining} gün`;
+        document.getElementById("pred-tariff-label").textContent = p.currentTariffLabel || "-";
+        document.getElementById("pred-overshoot").textContent = p.overshootPercent > 0 
+            ? `+${p.overshootPercent}% aşım` 
+            : `${p.overshootPercent}% tasarruf`;
+        
+        const badge = document.getElementById("prediction-status-badge");
+        if (p.budgetStatus === "OK") {
+            badge.textContent = "✅ Bütçe Yeterli";
+            badge.className = "badge badge-blue";
+        } else if (p.budgetStatus === "WARNING") {
+            badge.textContent = "⚠️ Yaklaşıyor";
+            badge.className = "badge badge-orange";
+        } else {
+            badge.textContent = "🚨 Bütçe Aşılacak!";
+            badge.className = "badge badge-red";
+        }
+    } catch (err) {
+        console.error("Prediction fetch error:", err);
+    }
+}
+
+// Load automation rules for the active home
+async function fetchAutomationRules(homeId) {
+    try {
+        const res = await fetch(`/api/homes/${homeId}/rules`, { headers: getHeaders() });
+        if (!res.ok) return;
+        const rules = await res.json();
+        renderAutomationRules(rules);
+    } catch (err) {
+        console.error("Automation rules fetch error:", err);
+    }
+}
+
+function renderAutomationRules(rules) {
+    const list = document.getElementById("automation-rules-list");
+    list.innerHTML = "";
+    
+    if (rules.length === 0) {
+        list.innerHTML = `<p class="rules-empty">Henüz otomasyon kuralı eklenmedi.</p>`;
+        return;
+    }
+    
+    const triggerLabels = {
+        "ANOMALY": "Anomali Tespitinde",
+        "BUDGET_80": "Bütçe %80 Aşımında",
+        "BUDGET_100": "Bütçe %100 Aşımında",
+        "WATTAGE_EXCEED": "Watt Aşımında"
+    };
+    const actionLabels = {
+        "SHUTDOWN": "⚡ Kapat",
+        "LOG_ONLY": "📋 Kaydet"
+    };
+    
+    rules.forEach(rule => {
+        const row = document.createElement("div");
+        row.className = `rule-row ${rule.enabled ? "" : "rule-disabled"}`;
+        row.innerHTML = `
+            <div class="rule-info">
+                <span class="rule-tag">${escapeHtml(rule.deviceType === "*" ? "Tüm Cihazlar" : rule.deviceType)}</span>
+                <span class="rule-trigger">${triggerLabels[rule.triggerType] || rule.triggerType}${rule.triggerValue ? ` (${rule.triggerValue}W)` : ""}</span>
+                <span class="rule-arrow">→</span>
+                <span class="rule-action">${actionLabels[rule.action] || rule.action}</span>
+            </div>
+            <div class="rule-controls">
+                <button class="btn btn-sm ${rule.enabled ? "btn-secondary" : "btn-primary"}" 
+                        onclick="toggleRule(${activeHomeId}, ${rule.id})" title="${rule.enabled ? "Devre Dışı Bırak" : "Etkinleştir"}">
+                    <i class="fa-solid ${rule.enabled ? "fa-toggle-on" : "fa-toggle-off"}"></i>
+                </button>
+                <button class="btn btn-sm btn-danger-sm" onclick="deleteRule(${activeHomeId}, ${rule.id})" title="Sil">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+            </div>
+        `;
+        list.appendChild(row);
+    });
+}
+
+window.openAddRuleForm = function() {
+    document.getElementById("add-rule-form").classList.remove("hidden");
+};
+
+window.closeAddRuleForm = function() {
+    document.getElementById("add-rule-form").classList.add("hidden");
+};
+
+window.updateRuleTriggerUI = function() {
+    const trigger = document.getElementById("rule-trigger-type").value;
+    const valueInput = document.getElementById("rule-trigger-value");
+    if (trigger === "WATTAGE_EXCEED") {
+        valueInput.classList.remove("hidden");
+    } else {
+        valueInput.classList.add("hidden");
+    }
+};
+
+window.submitNewRule = async function() {
+    if (!activeHomeId) return;
+    const deviceType = document.getElementById("rule-device-type").value;
+    const triggerType = document.getElementById("rule-trigger-type").value;
+    const triggerValueEl = document.getElementById("rule-trigger-value");
+    const triggerValue = triggerType === "WATTAGE_EXCEED" ? parseFloat(triggerValueEl.value) : null;
+    const action = document.getElementById("rule-action").value;
+    
+    try {
+        const res = await fetch(`/api/homes/${activeHomeId}/rules`, {
+            method: "POST",
+            headers: getHeaders(),
+            body: JSON.stringify({ deviceType, triggerType, triggerValue, action })
+        });
+        if (!res.ok) throw new Error("Kural kaydedilemedi");
+        showToast("Otomasyon Kuralı", "Kural başarıyla eklendi.", "success");
+        closeAddRuleForm();
+        await fetchAutomationRules(activeHomeId);
+    } catch (err) {
+        showToast("Hata", err.message, "danger");
+    }
+};
+
+window.toggleRule = async function(homeId, ruleId) {
+    try {
+        await fetch(`/api/homes/${homeId}/rules/${ruleId}/toggle`, {
+            method: "PATCH", headers: getHeaders()
+        });
+        await fetchAutomationRules(homeId);
+    } catch (err) {
+        showToast("Hata", "Kural güncellenemedi.", "danger");
+    }
+};
+
+window.deleteRule = async function(homeId, ruleId) {
+    try {
+        await fetch(`/api/homes/${homeId}/rules/${ruleId}`, {
+            method: "DELETE", headers: getHeaders()
+        });
+        showToast("Silindi", "Otomasyon kuralı kaldırıldı.", "info");
+        await fetchAutomationRules(homeId);
+    } catch (err) {
+        showToast("Hata", "Kural silinemedi.", "danger");
+    }
+};
+
 
 function closeHomeDetailModal() {
     document.getElementById("modal-home-detail").classList.add("hidden");

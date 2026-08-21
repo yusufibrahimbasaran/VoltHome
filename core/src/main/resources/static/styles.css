@@ -1037,3 +1037,188 @@ body {
     padding: 4px 10px;
     font-size: 11px;
 }
+
+/* ─── Prediction Bar ─────────────────────────────────────────── */
+.prediction-bar {
+    padding: 14px 20px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(167, 100, 255, 0.2);
+    background: rgba(167, 100, 255, 0.04);
+}
+
+.prediction-bar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.prediction-bar-metrics {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+}
+
+.pred-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.pred-metric span {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.pred-metric strong {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+/* ─── Automation Panel ──────────────────────────────────────── */
+.automation-panel {
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    border: 1px solid rgba(0, 229, 255, 0.12);
+}
+
+.automation-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.automation-panel-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.automation-rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.rules-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 12px;
+}
+
+.rule-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px 12px;
+    gap: 8px;
+    transition: var(--transition-smooth);
+}
+
+.rule-row:hover {
+    border-color: var(--border-hover);
+}
+
+.rule-row.rule-disabled {
+    opacity: 0.45;
+}
+
+.rule-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.rule-tag {
+    background: rgba(0, 229, 255, 0.1);
+    color: var(--neon-blue);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    border: 1px solid rgba(0, 229, 255, 0.2);
+}
+
+.rule-trigger {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.rule-arrow {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.rule-action {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--neon-orange);
+}
+
+.rule-controls {
+    display: flex;
+    gap: 6px;
+}
+
+.btn-danger-sm {
+    background: rgba(255, 60, 80, 0.1);
+    color: var(--neon-red);
+    border: 1px solid rgba(255, 60, 80, 0.2);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.btn-danger-sm:hover {
+    background: rgba(255, 60, 80, 0.25);
+}
+
+/* ─── Add Rule Form ─────────────────────────────────────────── */
+.add-rule-form {
+    background: rgba(255,255,255,0.02);
+    border: 1px dashed rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.rule-select, .rule-input {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-main);
+    font-family: var(--font-primary);
+    font-size: 12px;
+    padding: 6px 10px;
+    outline: none;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.rule-select:hover, .rule-input:hover {
+    border-color: var(--border-hover);
+}
+
+.rule-form-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
