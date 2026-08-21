@@ -9,6 +9,7 @@ import com.volthome.core.model.jpa.ConsumptionHistory;
 import com.volthome.core.model.jpa.Home;
 import com.volthome.core.repository.ConsumptionHistoryRepository;
 import com.volthome.core.repository.HomeRepository;
+import com.volthome.core.repository.UserRepository;
 import org.apache.ignite.client.ClientCache;
 import org.apache.ignite.client.IgniteClient;
 import org.slf4j.Logger;
@@ -33,18 +34,21 @@ public class HomeService {
     private final IgniteClient igniteClient;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
+    private final UserRepository userRepository;
 
     @Autowired
     public HomeService(HomeRepository homeRepository,
                        ConsumptionHistoryRepository consumptionHistoryRepository,
                        IgniteClient igniteClient,
                        KafkaTemplate<String, String> kafkaTemplate,
-                       ObjectMapper objectMapper) {
+                       ObjectMapper objectMapper,
+                       UserRepository userRepository) {
         this.homeRepository = homeRepository;
         this.consumptionHistoryRepository = consumptionHistoryRepository;
         this.igniteClient = igniteClient;
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
+        this.userRepository = userRepository;
     }
 
     private ClientCache<Long, HomeLiveState> getHomeCache() {
@@ -56,7 +60,11 @@ public class HomeService {
      * initializes Apache Ignite cache, and publishes registration event to Kafka.
      */
     @Transactional
-    public Home registerHome(Home home) {
+    public Home registerHome(Home home, String username) {
+        com.volthome.core.model.jpa.User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + username));
+        home.setUser(user);
+
         // Link appliances to home for JPA cascade persist
         if (home.getAppliances() != null) {
             for (Appliance app : home.getAppliances()) {
@@ -115,8 +123,15 @@ public class HomeService {
     /**
      * Retrieves all homes from the persistent database.
      */
-    public List<Home> getAllHomes() {
-        return homeRepository.findAll();
+    public List<Home> getAllHomes(String username) {
+        return homeRepository.findByUserUsername(username);
+    }
+
+    /**
+     * Retrieves a home by ID.
+     */
+    public Home getHomeById(Long id) {
+        return homeRepository.findById(id).orElse(null);
     }
 
     /**

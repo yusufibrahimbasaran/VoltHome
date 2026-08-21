@@ -11,6 +11,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -40,7 +42,9 @@ public class HomeController {
     @Operation(summary = "Register a new home", description = "Saves residential structure and its appliance topologies to PostgreSQL, initializes Ignite, and publishes registration event to Kafka")
     public ResponseEntity<Home> registerHome(@RequestBody Home home) {
         try {
-            Home savedHome = homeService.registerHome(home);
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            Home savedHome = homeService.registerHome(home, username);
             return ResponseEntity.ok(savedHome);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -50,13 +54,22 @@ public class HomeController {
     @GetMapping
     @Operation(summary = "List all registered homes", description = "Returns persistent general details of all registered homes from PostgreSQL database")
     public ResponseEntity<List<Home>> getAllHomes() {
-        return ResponseEntity.ok(homeService.getAllHomes());
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        return ResponseEntity.ok(homeService.getAllHomes(username));
     }
 
     @GetMapping("/{id}/status")
     @Operation(summary = "Poll real-time home status", description = "Retrieves live accumulated metrics, active tariff rate, and appliance breach details from Apache Ignite, joined with the latest AI recommendation")
     public ResponseEntity<Map<String, Object>> getHomeLiveStatus(@PathVariable Long id) {
         try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            Home home = homeService.getHomeById(id);
+            if (home == null || home.getUser() == null || !home.getUser().getUsername().equals(username)) {
+                return ResponseEntity.status(403).build();
+            }
+
             HomeLiveState liveState = homeService.getLiveStatus(id);
             
             // Fetch the latest AI recommendation from PostgreSQL
@@ -79,6 +92,12 @@ public class HomeController {
     @GetMapping("/{id}/trends")
     @Operation(summary = "Get historical consumption trends", description = "Fetches periodic/daily cumulative energy and cost snapshots from PostgreSQL database to populate frontend historical charts")
     public ResponseEntity<List<ConsumptionHistory>> getHomeTrends(@PathVariable Long id) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        Home home = homeService.getHomeById(id);
+        if (home == null || home.getUser() == null || !home.getUser().getUsername().equals(username)) {
+            return ResponseEntity.status(403).build();
+        }
         return ResponseEntity.ok(homeService.getHistoricalTrends(id));
     }
 
@@ -86,13 +105,20 @@ public class HomeController {
     @Operation(summary = "Manually trigger AI advisory alert", description = "Asynchronously processes the current live status, sends prompt to Google Gemini, stores suggestion, and dispatches email notification")
     public ResponseEntity<Map<String, String>> triggerAIRecommendation(@PathVariable Long id) {
         try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            Home home = homeService.getHomeById(id);
+            if (home == null || home.getUser() == null || !home.getUser().getUsername().equals(username)) {
+                return ResponseEntity.status(403).build();
+            }
+
             HomeLiveState liveState = homeService.getLiveStatus(id);
             new Thread(() -> {
                 try {
                     aiService.generateAndSendRecommendation(id, liveState, "Manuel Talep");
                 } catch (Exception e) {
                     // Logged in AIService
-                }
+                  }
             }).start();
             
             Map<String, String> res = new HashMap<>();

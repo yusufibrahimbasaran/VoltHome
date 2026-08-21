@@ -29,6 +29,12 @@
                 </div>
             </div>
             <div class="header-actions">
+                <div id="user-info-display" class="user-info-block hidden">
+                    <span id="display-username"><i class="fa-solid fa-user"></i> Kullanıcı</span>
+                    <button id="btn-logout" class="btn btn-secondary btn-sm" onclick="handleLogout()">
+                        <i class="fa-solid fa-right-from-bracket"></i> Çıkış
+                    </button>
+                </div>
                 <button id="btn-open-add-home" class="btn btn-primary">
                     <i class="fa-solid fa-plus"></i> Yeni Ev Ekle
                 </button>
@@ -236,6 +242,46 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- MODAL: LOGIN / REGISTER OVERLAY -->
+    <div id="modal-auth" class="modal-overlay auth-overlay">
+        <div class="modal-content auth-content glass-panel animated fade-in">
+            <div class="auth-tabs">
+                <button id="tab-login" class="auth-tab active" onclick="switchAuthTab('login')">Giriş Yap</button>
+                <button id="tab-register" class="auth-tab" onclick="switchAuthTab('register')">Kayıt Ol</button>
+            </div>
+            
+            <!-- Login Form -->
+            <form id="form-login" class="auth-form">
+                <div class="form-group">
+                    <label for="login-username">Kullanıcı Adı</label>
+                    <input type="text" id="login-username" placeholder="Kullanıcı adınızı girin" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Şifre</label>
+                    <input type="password" id="login-password" placeholder="Şifrenizi girin" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Giriş Yap <i class="fa-solid fa-right-to-bracket"></i></button>
+            </form>
+            
+            <!-- Register Form -->
+            <form id="form-register" class="auth-form hidden">
+                <div class="form-group">
+                    <label for="register-username">Kullanıcı Adı</label>
+                    <input type="text" id="register-username" placeholder="Kullanıcı adı seçin" required>
+                </div>
+                <div class="form-group">
+                    <label for="register-email">E-posta Adresi</label>
+                    <input type="email" id="register-email" placeholder="E-posta adresinizi girin" required>
+                </div>
+                <div class="form-group">
+                    <label for="register-password">Şifre</label>
+                    <input type="password" id="register-password" placeholder="Şifrenizi oluşturun" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Kayıt Ol <i class="fa-solid fa-user-plus"></i></button>
+            </form>
         </div>
     </div>
 

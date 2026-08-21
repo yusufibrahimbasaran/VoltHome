@@ -1,9 +1,14 @@
 // VoltHome Client-Side SPA Engine
 const API_BASE = "http://localhost:8080/api/homes";
+const AUTH_BASE = "http://localhost:8080/api/auth";
 let homesList = [];
 let activeHomeId = null;
 let chartInstance = null;
 let socket = null;
+
+// Auth state
+let authToken = localStorage.getItem("voltHomeToken");
+let authUser = localStorage.getItem("voltHomeUser");
 
 // Track previously seen warnings to prevent spamming notifications on client side
 const triggeredClientAlerts = {
@@ -13,24 +18,159 @@ const triggeredClientAlerts = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
-    // Initial load
-    fetchHomes();
-    
-    // Initialize WebSocket connection for real-time telemetry streaming
-    connectWebSocket();
+    // Check if authenticated on load
+    checkAuthentication();
 
     // Event Bindings
     document.getElementById("btn-open-add-home").addEventListener("click", openAddHomeModal);
     document.getElementById("btn-add-appliance-row").addEventListener("click", addApplianceRow);
     document.getElementById("form-add-home").addEventListener("submit", handleAddHomeSubmit);
+    
+    // Auth Forms Bindings
+    document.getElementById("form-login").addEventListener("submit", handleLoginSubmit);
+    document.getElementById("form-register").addEventListener("submit", handleRegisterSubmit);
 });
+
+// Helper for authenticated headers
+function getHeaders() {
+    return {
+        "Content-Type": "application/json",
+        "Authorization": authToken ? `Bearer ${authToken}` : ""
+    };
+}
+
+// Switch between login and register tabs
+window.switchAuthTab = function(tab) {
+    const tabLogin = document.getElementById("tab-login");
+    const tabRegister = document.getElementById("tab-register");
+    const formLogin = document.getElementById("form-login");
+    const formRegister = document.getElementById("form-register");
+    
+    if (tab === 'login') {
+        tabLogin.classList.add("active");
+        tabRegister.classList.remove("active");
+        formLogin.classList.remove("hidden");
+        formRegister.classList.add("hidden");
+    } else {
+        tabLogin.classList.remove("active");
+        tabRegister.classList.add("active");
+        formLogin.classList.add("hidden");
+        formRegister.classList.remove("hidden");
+    }
+};
+
+// Check if token exists, toggle UI overlays
+function checkAuthentication() {
+    if (authToken && authUser) {
+        document.getElementById("modal-auth").classList.add("hidden");
+        document.getElementById("user-info-display").classList.remove("hidden");
+        document.getElementById("display-username").innerHTML = `<i class="fa-solid fa-user text-neon-blue"></i> ${escapeHtml(authUser)}`;
+        
+        // Fetch initial user homes
+        fetchHomes();
+        // Open real-time telemetry stream
+        connectWebSocket();
+    } else {
+        document.getElementById("modal-auth").classList.remove("hidden");
+        document.getElementById("user-info-display").classList.add("hidden");
+        if (socket) {
+            socket.close();
+            socket = null;
+        }
+    }
+}
+
+// Authenticate & get JWT Token
+async function handleLoginSubmit(e) {
+    e.preventDefault();
+    const username = document.getElementById("login-username").value;
+    const password = document.getElementById("login-password").value;
+    
+    try {
+        const res = await fetch(`${AUTH_BASE}/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password })
+        });
+        
+        if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.message || "Giriş başarısız!");
+        }
+        
+        const data = await res.json();
+        authToken = data.accessToken;
+        authUser = data.username;
+        
+        localStorage.setItem("voltHomeToken", authToken);
+        localStorage.setItem("voltHomeUser", authUser);
+        
+        showToast("Giriş Başarılı", `Hoş geldiniz, ${authUser}!`, "success");
+        
+        // Reset forms
+        document.getElementById("form-login").reset();
+        
+        checkAuthentication();
+    } catch (err) {
+        showToast("Giriş Başarısız", err.message, "danger");
+    }
+}
+
+// Register user account
+async function handleRegisterSubmit(e) {
+    e.preventDefault();
+    const username = document.getElementById("register-username").value;
+    const email = document.getElementById("register-email").value;
+    const password = document.getElementById("register-password").value;
+    
+    try {
+        const res = await fetch(`${AUTH_BASE}/register`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, email, password })
+        });
+        
+        if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.message || "Kayıt başarısız!");
+        }
+        
+        showToast("Kayıt Başarılı", "Hesabınız oluşturuldu. Giriş yapabilirsiniz.", "success");
+        document.getElementById("form-register").reset();
+        switchAuthTab('login');
+    } catch (err) {
+        showToast("Kayıt Başarısız", err.message, "danger");
+    }
+}
+
+// Log out user
+window.handleLogout = function() {
+    authToken = null;
+    authUser = null;
+    localStorage.removeItem("voltHomeToken");
+    localStorage.removeItem("voltHomeUser");
+    
+    showToast("Oturum Kapatıldı", "Güvenli çıkış yapıldı.", "info");
+    
+    // Close modal details if open
+    closeHomeDetailModal();
+    closeAddHomeModal();
+    
+    // Clear screen
+    homesList = [];
+    renderHomesGrid();
+    calculateGlobalStats();
+    
+    checkAuthentication();
+};
 
 // Connect WebSocket to backend stream
 function connectWebSocket() {
+    if (!authToken) return;
     const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
     // Fallback to localhost:8080 if running page from file system
     const host = window.location.host || "localhost:8080";
-    const socketUrl = `${protocol}${host}/ws/telemetry`;
+    const socketUrl = `${protocol}${host}/ws/telemetry?token=${authToken}`;
     
     console.log(`Connecting WebSocket to: ${socketUrl}`);
     socket = new WebSocket(socketUrl);
@@ -91,7 +231,11 @@ function connectWebSocket() {
 // Fetch all registered homes from PostgreSQL
 async function fetchHomes() {
     try {
-        const res = await fetch(API_BASE);
+        const res = await fetch(API_BASE, { headers: getHeaders() });
+        if (res.status === 401 || res.status === 403) {
+            handleLogout();
+            return;
+        }
         if (!res.ok) throw new Error("Ev listesi alınamadı");
         
         homesList = await res.json();
@@ -270,10 +414,14 @@ async function handleAddHomeSubmit(e) {
     try {
         const res = await fetch(API_BASE, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getHeaders(),
             body: JSON.stringify(payload)
         });
         
+        if (res.status === 401 || res.status === 403) {
+            handleLogout();
+            return;
+        }
         if (!res.ok) throw new Error("Ev kaydedilirken bir hata oluştu");
         
         showToast("Başarılı", "Ev kaydı başarıyla oluşturuldu ve telemetri başlatıldı.", "success");
@@ -323,7 +471,11 @@ async function updateHomeDetails() {
     if (!activeHomeId) return;
     
     try {
-        const res = await fetch(`${API_BASE}/${activeHomeId}/status`);
+        const res = await fetch(`${API_BASE}/${activeHomeId}/status`, { headers: getHeaders() });
+        if (res.status === 401 || res.status === 403) {
+            handleLogout();
+            return;
+        }
         if (!res.ok) throw new Error("Canlı durum bilgisi alınamadı");
         
         const data = await res.json();
@@ -454,7 +606,11 @@ function renderLiveAppliances(appliancesMap, homeName) {
 // Fetch trend data and draw Chart.js graph
 async function fetchAndDrawTrendChart(homeId) {
     try {
-        const res = await fetch(`${API_BASE}/${homeId}/trends`);
+        const res = await fetch(`${API_BASE}/${homeId}/trends`, { headers: getHeaders() });
+        if (res.status === 401 || res.status === 403) {
+            handleLogout();
+            return;
+        }
         if (!res.ok) throw new Error("Trend verileri alınamadı");
         
         const data = await res.json();
@@ -539,7 +695,14 @@ async function triggerManualAIRecommendation() {
     document.getElementById("ai-loading").classList.remove("hidden");
     
     try {
-        const res = await fetch(`${API_BASE}/${activeHomeId}/trigger-ai`, { method: "POST" });
+        const res = await fetch(`${API_BASE}/${activeHomeId}/trigger-ai`, { 
+            method: "POST",
+            headers: getHeaders()
+        });
+        if (res.status === 401 || res.status === 403) {
+            handleLogout();
+            return;
+        }
         if (!res.ok) throw new Error("Yapay zeka tetiklenemedi");
         
         const data = await res.json();
