@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoltHome — Real-Time IoT Energy Analytics & Budget Control</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar or Header -->
+        <header class="app-header">
+            <div class="logo-area">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-bolt-lightning text-neon-blue"></i>
+                </div>
+                <div class="logo-text">
+                    <h1>VoltHome</h1>
+                    <p>Real-Time IoT Energy Analytics & Budget Control</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button id="btn-open-add-home" class="btn btn-primary">
+                    <i class="fa-solid fa-plus"></i> Yeni Ev Ekle
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Body -->
+        <main class="app-main">
+            <!-- Global Dashboard Stats -->
+            <section class="stats-overview">
+                <div class="stat-card glass-panel">
+                    <div class="stat-icon bg-soft-blue">
+                        <i class="fa-solid fa-house-chimney text-neon-blue"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Toplam Ev</h3>
+                        <p id="stat-total-homes">-</p>
+                    </div>
+                </div>
+                <div class="stat-card glass-panel">
+                    <div class="stat-icon bg-soft-green">
+                        <i class="fa-solid fa-plug text-neon-green"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Toplam Tüketim</h3>
+                        <p id="stat-total-energy">- kWh</p>
+                    </div>
+                </div>
+                <div class="stat-card glass-panel">
+                    <div class="stat-icon bg-soft-orange">
+                        <i class="fa-solid fa-turkish-lira-sign text-neon-orange"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Toplam Bakiye</h3>
+                        <p id="stat-total-cost">- TL</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Homes Grid Section -->
+            <section class="homes-section">
+                <div class="section-header">
+                    <h2><i class="fa-solid fa-gauge-high"></i> Ev Durum Paneli</h2>
+                    <div class="live-indicator-wrapper">
+                        <span class="pulsing-dot green"></span>
+                        <span class="indicator-text">Canlı Telemetri Aktif (2s)</span>
+                    </div>
+                </div>
+
+                <div id="homes-loading" class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Ev verileri yükleniyor...</p>
+                </div>
+
+                <div id="homes-empty" class="empty-state hidden">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <p>Henüz kayıtlı bir ev bulunmamaktadır. Sağ üst köşeden yeni bir ev kaydedebilirsiniz.</p>
+                </div>
+
+                <div id="homes-grid" class="homes-grid hidden">
+                    <!-- Home Cards will be dynamically inserted here -->
+                </div>
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            <p>&copy; 2026 VoltHome Smart Ecosystem. Tüm Hakları Saklıdır.</p>
+        </footer>
+    </div>
+
+    <!-- MODAL: ADD NEW HOME -->
+    <div id="modal-add-home" class="modal-overlay hidden">
+        <div class="modal-content glass-panel animated fade-in">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-house-medical"></i> Yeni Ev Provision Kaydı</h2>
+                <button class="btn-close-modal" onclick="closeAddHomeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="form-add-home">
+                    <div class="form-group">
+                        <label for="home-name">Ev / Daire Adı</label>
+                        <input type="text" id="home-name" placeholder="Örn: Kaya Apartmanı Daire 4" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="home-email">İletişim E-posta Adresi</label>
+                        <input type="email" id="home-email" placeholder="Örn: kaya.daire4@gmail.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="home-quota">Bütçe Kotası (TL)</label>
+                        <input type="number" id="home-quota" placeholder="Örn: 1000.0" min="50" step="10" required>
+                    </div>
+
+                    <div class="appliance-form-section">
+                        <h3><i class="fa-solid fa-plug-circle-bolt"></i> Cihaz Tanımlamaları</h3>
+                        <div id="appliances-list" class="appliances-form-list">
+                            <!-- Default Appliance Row 1 -->
+                            <div class="appliance-row">
+                                <input type="text" class="app-name" placeholder="Cihaz Adı (Örn: Klima)" required>
+                                <select class="app-type">
+                                    <option value="AC">Klima (AC)</option>
+                                    <option value="REFRIGERATOR">Buzdolabı</option>
+                                    <option value="WASHING_MACHINE">Çamaşır Makinesi</option>
+                                    <option value="HEATER">Isıtıcı</option>
+                                    <option value="TELEVISION">Televizyon</option>
+                                    <option value="OTHER">Diğer</option>
+                                </select>
+                                <input type="number" class="app-limit" placeholder="Limit (W) Örn: 2000" min="10" required>
+                                <button type="button" class="btn-remove-row" onclick="removeApplianceRow(this)">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button type="button" id="btn-add-appliance-row" class="btn btn-secondary btn-sm">
+                            <i class="fa-solid fa-plus"></i> Cihaz Ekle
+                        </button>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeAddHomeModal()">İptal</button>
+                        <button type="submit" class="btn btn-primary">Kaydet & Başlat</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: HOME DETAIL & MONITORING -->
+    <div id="modal-home-detail" class="modal-overlay hidden">
+        <div class="modal-content glass-panel detail-modal-content animated fade-in">
+            <div class="modal-header">
+                <div class="modal-title-area">
+                    <h2 id="detail-home-name">Ev Detay İzleme</h2>
+                    <span id="detail-home-email">email@email.com</span>
+                </div>
+                <div class="modal-header-actions">
+                    <span id="detail-quota-badge" class="badge">Bütçe Kotası: - TL</span>
+                    <button class="btn-close-modal" onclick="closeHomeDetailModal()">&times;</button>
+                </div>
+            </div>
+            
+            <div class="modal-body scrollable-body">
+                <!-- Live Highlights Grid -->
+                <div class="live-highlights">
+                    <div class="highlight-box glass-panel text-center">
+                        <span class="highlight-label">Tüketilen Toplam Enerji</span>
+                        <h4 id="detail-cumulative-energy" class="text-neon-green">- kWh</h4>
+                    </div>
+                    <div class="highlight-box glass-panel text-center">
+                        <span class="highlight-label">Güncel Fatura Tutarı</span>
+                        <h4 id="detail-cumulative-cost" class="text-neon-orange">- TL</h4>
+                    </div>
+                    <div class="highlight-box glass-panel text-center">
+                        <span class="highlight-label">Birim Tarife Ücreti</span>
+                        <h4 id="detail-tariff-rate" class="text-neon-blue">- TL/kWh</h4>
+                    </div>
+                    <div class="highlight-box glass-panel text-center">
+                        <span class="highlight-label">Tarife Durumu</span>
+                        <div id="detail-tariff-status" class="tariff-status-wrapper">
+                            <!-- Will be injected: Base Tariff vs Premium Penalty -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Details Grid Layout (Left: Live appliances, Right: AI + Trends) -->
+                <div class="detail-grid-layout">
+                    <!-- Left Column: IoT Appliance Telemetry -->
+                    <div class="detail-left-column">
+                        <div class="card-section-title">
+                            <h3><i class="fa-solid fa-wave-square"></i> Cihaz Anlık Güç Tüketimleri</h3>
+                            <span class="live-pulse"><span class="pulse-dot"></span>Canlı</span>
+                        </div>
+                        <div id="detail-appliances-grid" class="appliances-live-grid">
+                            <!-- Live Appliances loaded here -->
+                        </div>
+                    </div>
+
+                    <!-- Right Column: AI Suggestions and Charts -->
+                    <div class="detail-right-column">
+                        <!-- AI Recommendations Card -->
+                        <div class="ai-recommendations-panel glass-panel">
+                            <div class="ai-panel-header">
+                                <h3><i class="fa-solid fa-wand-magic-sparkles text-neon-violet"></i> VoltHome AI Tasarruf Asistanı</h3>
+                                <button id="btn-trigger-ai" class="btn btn-secondary btn-sm" onclick="triggerManualAIRecommendation()">
+                                    <i class="fa-solid fa-arrows-rotate"></i> Yenile
+                                </button>
+                            </div>
+                            <div class="ai-panel-body">
+                                <div id="ai-loading" class="ai-loader hidden">
+                                    <div class="spinner spinner-violet"></div>
+                                    <p>Yapay zeka önerisi hazırlanıyor...</p>
+                                </div>
+                                <div id="ai-content-box" class="ai-text-content">
+                                    <!-- Injected AI suggestion text -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Historical Chart Panel -->
+                        <div class="chart-panel glass-panel">
+                            <h3><i class="fa-solid fa-chart-line"></i> Tüketim Geçmiş Trendi (PostgreSQL)</h3>
+                            <div class="chart-container">
+                                <canvas id="chart-consumption-trends"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Custom JS -->
+    <script src="app.js"></script>
+</body>
+</html>

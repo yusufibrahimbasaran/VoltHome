@@ -1,0 +1,32 @@
+# Maven
+target/
+*.class
+
+# IDEs
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv/
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project Logs
+logs/sent_emails.txt
+logs/*.log
+core/logs/
