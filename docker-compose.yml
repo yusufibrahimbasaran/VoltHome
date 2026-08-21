@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -48,3 +46,36 @@ services:
       - "18080:8080"
     environment:
       - IGNITE_QUIET=false
+
+  volthome-core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    container_name: volthome-core-app
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=volthome_db
+      - DB_USER=volthome
+      - DB_PASSWORD=volthome_pass
+      - KAFKA_SERVERS=kafka:29092
+      - IGNITE_ADDRESSES=ignite:10800
+      - GEMINI_API_KEY=""
+    depends_on:
+      - postgres
+      - kafka
+      - ignite
+
+  volthome-sensors:
+    build:
+      context: ./telemetry-sensors
+      dockerfile: Dockerfile
+    container_name: volthome-sensors-app
+    restart: always
+    environment:
+      - KAFKA_SERVERS=kafka:29092
+    depends_on:
+      - kafka

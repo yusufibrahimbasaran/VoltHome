@@ -10,6 +10,7 @@ public class KafkaConfig {
 
     public static final String REGISTRATION_TOPIC = "volthome-registration";
     public static final String TELEMETRY_TOPIC = "volthome-telemetry";
+    public static final String COMMANDS_TOPIC = "volthome-commands";
 
     @Bean
     public NewTopic registrationTopic() {
@@ -22,6 +23,14 @@ public class KafkaConfig {
     @Bean
     public NewTopic telemetryTopic() {
         return TopicBuilder.name(TELEMETRY_TOPIC)
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic commandsTopic() {
+        return TopicBuilder.name(COMMANDS_TOPIC)
                 .partitions(1)
                 .replicas(1)
                 .build();

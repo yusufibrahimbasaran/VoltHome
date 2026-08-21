@@ -23,11 +23,12 @@ except ImportError:
 KAFKA_BROKER = os.environ.get("KAFKA_SERVERS", "localhost:9092")
 REGISTRATION_TOPIC = "volthome-registration"
 TELEMETRY_TOPIC = "volthome-telemetry"
+COMMANDS_TOPIC = "volthome-commands"
 
 print(f"VoltHome Telemetry Simulator started using broker: {KAFKA_BROKER}")
 
 # Memory storage for registered homes
-# Format: { home_id: { 'name': name, 'appliances': [ { 'id': id, 'name': name, 'type': type, 'safeLimitWatt': limit } ] } }
+# Format: { home_id: { 'name': name, 'appliances': [ { 'id': id, 'name': name, 'type': type, 'safeLimitWatt': limit, 'turned_off': False } ] } }
 registered_homes = {}
 lock = threading.Lock()
 
@@ -64,6 +65,10 @@ def registration_listener():
             appliances = home_data.get("appliances", [])
             
             with lock:
+                # Initialize turned_off flag for each appliance
+                for app in appliances:
+                    app["turned_off"] = False
+                
                 registered_homes[home_id] = {
                     "name": home_name,
                     "appliances": appliances,
@@ -76,11 +81,43 @@ def registration_listener():
     except Exception as e:
         print(f"Error in Kafka registration listener: {e}")
 
+def commands_listener():
+    """Listens to the commands topic and executes smart switches (like shutting off appliances)."""
+    print(f"Listening for home automation commands on topic: {COMMANDS_TOPIC}...")
+    try:
+        consumer = KafkaConsumer(
+            COMMANDS_TOPIC,
+            bootstrap_servers=KAFKA_BROKER,
+            auto_offset_reset='latest', # Only react to incoming real-time commands
+            enable_auto_commit=True,
+            group_id='volthome-command-simulator',
+            value_deserializer=lambda x: json.loads(x.decode('utf-8'))
+        )
+        
+        for message in consumer:
+            command_data = message.value
+            home_id = int(command_data.get("homeId"))
+            appliance_id = int(command_data.get("applianceId"))
+            command = command_data.get("command")
+            reason = command_data.get("reason", "No reason provided")
+            
+            if command == "SHUTDOWN":
+                with lock:
+                    if home_id in registered_homes:
+                        home_info = registered_homes[home_id]
+                        appliances = home_info["appliances"]
+                        for app in appliances:
+                            if int(app.get("id")) == appliance_id:
+                                app["turned_off"] = True
+                                print(f"\n[COMMAND RECEIVED] Shut down Appliance {app.get('name')} (ID: {appliance_id}) in Home {home_info['name']} due to: {reason}")
+    except Exception as e:
+        print(f"Error in Kafka commands listener: {e}")
+
 def telemetry_emitter():
     """Periodically generates power consumption telemetry (Watts) for all registered homes and appliances."""
     print("Starting background telemetry generator loop (Every 2 seconds)...")
     
-    # Wait for consumer thread to hook up
+    # Wait for consumer threads to hook up
     time.sleep(2)
     
     while True:
@@ -89,7 +126,6 @@ def telemetry_emitter():
                 homes_copy = list(registered_homes.items())
             
             if not homes_copy:
-                # No homes registered yet, check logs and wait
                 time.sleep(2)
                 continue
             
@@ -102,32 +138,32 @@ def telemetry_emitter():
                     app_name = app.get("name")
                     safe_limit = float(app.get("safeLimitWatt", 1000.0))
                     
-                    # Core simulation logic
-                    # Usually, appliances run between 10% and 80% of their safe limit.
-                    # However, we deliberately cause an appliance to breach its limit every now and then
-                    # to trigger consecutive breach checks (3 cycles) and test the AI notification pipeline.
-                    
-                    # Retrieve consecutive breach state in simulator to force a breach sequence
-                    anomaly_cycle = home_info["anomaly_cycles"].get(app_id, 0)
-                    
-                    # 5% chance to start a deliberate anomaly sequence of 3 cycles
-                    if anomaly_cycle == 0 and random.random() < 0.05:
-                        home_info["anomaly_cycles"][app_id] = 1
-                        anomaly_cycle = 1
-                    
-                    if anomaly_cycle > 0 and anomaly_cycle <= 3:
-                        # Force a breach (1.1x to 1.3x of safe limit)
-                        wattage = safe_limit * random.uniform(1.1, 1.3)
-                        home_info["anomaly_cycles"][app_id] += 1
-                        print(f"[SIMULATING BREACH] Appliance {app_name} (Home: {name}) is in breach cycle {anomaly_cycle}/3. Wattage: {wattage:.1f}W")
+                    # 1. Check if the device has been remotely shut down by backend
+                    if app.get("turned_off", False):
+                        wattage = 0.0
+                        print(f"  [DEVICE IS SHUT DOWN] Appliance {app_name} in home {name} is turned off.")
                     else:
-                        # Reset deliberate anomaly tracker after 3 cycles or keep it 0
-                        home_info["anomaly_cycles"][app_id] = 0
-                        # Normal behavior: random usage (e.g. 20% to 90% of safe limit), or device is turned off (0W, 20% chance)
-                        if random.random() < 0.2:
-                            wattage = 0.0
+                        # Retrieval anomaly tracking
+                        anomaly_cycle = home_info["anomaly_cycles"].get(app_id, 0)
+                        
+                        # 5% chance to start a deliberate anomaly sequence of 3 cycles
+                        if anomaly_cycle == 0 and random.random() < 0.05:
+                            home_info["anomaly_cycles"][app_id] = 1
+                            anomaly_cycle = 1
+                        
+                        if anomaly_cycle > 0 and anomaly_cycle <= 3:
+                            # Force a breach (1.1x to 1.3x of safe limit)
+                            wattage = safe_limit * random.uniform(1.1, 1.3)
+                            home_info["anomaly_cycles"][app_id] += 1
+                            print(f"[SIMULATING BREACH] Appliance {app_name} (Home: {name}) is in breach cycle {anomaly_cycle}/3. Wattage: {wattage:.1f}W")
                         else:
-                            wattage = safe_limit * random.uniform(0.2, 0.9)
+                            # Reset deliberate anomaly tracker
+                            home_info["anomaly_cycles"][app_id] = 0
+                            # Normal behavior: random usage (20% to 90% of safe limit), or device is turned off (0W, 20% chance)
+                            if random.random() < 0.2:
+                                wattage = 0.0
+                            else:
+                                wattage = safe_limit * random.uniform(0.2, 0.9)
                     
                     payload = {
                         "homeId": home_id,
@@ -138,7 +174,9 @@ def telemetry_emitter():
                     
                     if producer:
                         producer.send(TELEMETRY_TOPIC, key=str(home_id).encode('utf-8'), value=payload)
-                        print(f"  Sent telemetry -> Home: {name} | Appliance: {app_name} | Wattage: {payload['wattage']}W")
+                        # Avoid print spamming if the device is shut down
+                        if not app.get("turned_off", False):
+                            print(f"  Sent telemetry -> Home: {name} | Appliance: {app_name} | Wattage: {payload['wattage']}W")
                     else:
                         print(f"  [MOCK TELEMETRY] Home: {name} | Appliance: {app_name} | Wattage: {payload['wattage']}W")
             
@@ -156,6 +194,10 @@ if __name__ == "__main__":
     # Start registration listener thread
     listener_thread = threading.Thread(target=registration_listener, daemon=True)
     listener_thread.start()
+    
+    # Start commands listener thread
+    commands_thread = threading.Thread(target=commands_listener, daemon=True)
+    commands_thread.start()
     
     # Start emitter loop in main thread
     telemetry_emitter()

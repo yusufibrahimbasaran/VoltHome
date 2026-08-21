@@ -19,10 +19,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.kafka.core.KafkaTemplate;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.HashMap;
 import javax.cache.Cache;
 import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.cache.query.ScanQuery;
@@ -40,6 +42,8 @@ public class TelemetryConsumerService {
     private final EventLogRepository eventLogRepository;
     private final AIService aiService;
     private final ObjectMapper objectMapper;
+    private final TelemetryWebSocketHandler webSocketHandler;
+    private final KafkaTemplate<String, String> kafkaTemplate;
 
     @Autowired
     public TelemetryConsumerService(HomeService homeService,
@@ -50,7 +54,9 @@ public class TelemetryConsumerService {
                                     ConsumptionHistoryRepository consumptionHistoryRepository,
                                     EventLogRepository eventLogRepository,
                                     AIService aiService,
-                                    ObjectMapper objectMapper) {
+                                    ObjectMapper objectMapper,
+                                    TelemetryWebSocketHandler webSocketHandler,
+                                    KafkaTemplate<String, String> kafkaTemplate) {
         this.homeService = homeService;
         this.anomalyService = anomalyService;
         this.billingRuleService = billingRuleService;
@@ -60,6 +66,8 @@ public class TelemetryConsumerService {
         this.eventLogRepository = eventLogRepository;
         this.aiService = aiService;
         this.objectMapper = objectMapper;
+        this.webSocketHandler = webSocketHandler;
+        this.kafkaTemplate = kafkaTemplate;
     }
 
     private ClientCache<Long, HomeLiveState> getHomeCache() {
@@ -85,6 +93,8 @@ public class TelemetryConsumerService {
 
             ApplianceLiveState appState = liveState.getAppliances().get(applianceId);
             if (appState != null) {
+                boolean was100Breached = liveState.getWarning100Triggered();
+
                 // 1. Update appliance wattage
                 appState.setCurrentWatt(wattage);
 
@@ -108,6 +118,9 @@ public class TelemetryConsumerService {
                     
                     // Trigger AI alert immediately
                     triggerAIAnomalyNotification(homeId, liveState, appState.getName(), wattage);
+
+                    // Send auto shutdown command
+                    sendShutdownCommand(homeId, applianceId, appState.getName(), "Cihaz tüketim limiti aşım anomalisi.");
                 } else if (!isAnomalousNow && wasAnomalous) {
                     // State returned to normal
                     log.info("Anomaly cleared for Appliance {} ({}) in home {}.", applianceId, appState.getName(), homeId);
@@ -128,8 +141,27 @@ public class TelemetryConsumerService {
                 // 4. Run billing evaluations (checks thresholds, enforces penalty tariffs)
                 billingRuleService.evaluateBillingRules(liveState);
 
+                // Check for budget breach transitions to trigger automated shutdowns
+                boolean is100Breached = liveState.getWarning100Triggered();
+                if (is100Breached && !was100Breached) {
+                    log.warn("Budget 100% breach detected for home {}. Initiating emergency shutdown for all active appliances.", homeId);
+                    for (ApplianceLiveState app : liveState.getAppliances().values()) {
+                        if (app.getCurrentWatt() > 0) {
+                            sendShutdownCommand(homeId, app.getId(), app.getName(), "Ev bütçe limitinin %100'ü aşıldı.");
+                        }
+                    }
+                }
+
                 // 5. Update Ignite cache state
                 getHomeCache().put(homeId, liveState);
+
+                // 6. Broadcast updated state via WebSocket
+                try {
+                    String liveStateJson = objectMapper.writeValueAsString(liveState);
+                    webSocketHandler.broadcast(liveStateJson);
+                } catch (Exception e) {
+                    log.error("Failed to broadcast live status update via WebSockets: {}", e.getMessage());
+                }
             }
             
         } catch (IOException e) {
@@ -200,5 +232,26 @@ public class TelemetryConsumerService {
                 log.error("Error sending AI anomaly alert: {}", e.getMessage());
             }
         }).start();
+    }
+
+    private void sendShutdownCommand(Long homeId, Long applianceId, String applianceName, String reason) {
+        try {
+            Map<String, Object> commandPayload = new HashMap<>();
+            commandPayload.put("homeId", homeId);
+            commandPayload.put("applianceId", applianceId);
+            commandPayload.put("command", "SHUTDOWN");
+            commandPayload.put("reason", reason);
+            
+            String messageJson = objectMapper.writeValueAsString(commandPayload);
+            kafkaTemplate.send(KafkaConfig.COMMANDS_TOPIC, String.valueOf(homeId), messageJson);
+            log.info("Sent SHUTDOWN command to Kafka topic {} for appliance {} in home {}. Reason: {}", 
+                    KafkaConfig.COMMANDS_TOPIC, applianceId, homeId, reason);
+            
+            // Log event in PostgreSQL
+            logEvent(homeId, "APPLIANCE_SHUTDOWN_COMMAND", 
+                    "Cihaz otomatik kapatma emri gönderildi: " + applianceName + " (Neden: " + reason + ")");
+        } catch (Exception e) {
+            log.error("Failed to send shutdown command for appliance {}: {}", applianceId, e.getMessage());
+        }
     }
 }

@@ -2,9 +2,8 @@
 const API_BASE = "http://localhost:8080/api/homes";
 let homesList = [];
 let activeHomeId = null;
-let detailPollInterval = null;
-let dashboardPollInterval = null;
 let chartInstance = null;
+let socket = null;
 
 // Track previously seen warnings to prevent spamming notifications on client side
 const triggeredClientAlerts = {
@@ -17,14 +16,77 @@ document.addEventListener("DOMContentLoaded", () => {
     // Initial load
     fetchHomes();
     
-    // Start quiet background dashboard polling
-    dashboardPollInterval = setInterval(fetchHomes, 5000);
+    // Initialize WebSocket connection for real-time telemetry streaming
+    connectWebSocket();
 
     // Event Bindings
     document.getElementById("btn-open-add-home").addEventListener("click", openAddHomeModal);
     document.getElementById("btn-add-appliance-row").addEventListener("click", addApplianceRow);
     document.getElementById("form-add-home").addEventListener("submit", handleAddHomeSubmit);
 });
+
+// Connect WebSocket to backend stream
+function connectWebSocket() {
+    const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+    // Fallback to localhost:8080 if running page from file system
+    const host = window.location.host || "localhost:8080";
+    const socketUrl = `${protocol}${host}/ws/telemetry`;
+    
+    console.log(`Connecting WebSocket to: ${socketUrl}`);
+    socket = new WebSocket(socketUrl);
+
+    socket.onopen = () => {
+        console.log("WebSocket connected to VoltHome telemetry stream.");
+    };
+
+    socket.onmessage = (event) => {
+        try {
+            const liveState = JSON.parse(event.data);
+            
+            // Map dynamic Ignite model properties to matching REST API objects
+            const homeId = liveState.homeId;
+            const index = homesList.findIndex(h => h.id === homeId);
+            
+            const updatedHome = {
+                id: homeId,
+                name: liveState.name,
+                contactEmail: liveState.contactEmail,
+                budgetQuota: liveState.budgetQuota,
+                currentBalance: liveState.cumulativeCost,
+                cumulativeEnergyKwh: liveState.cumulativeEnergyKwh,
+                isPenaltyTariff: liveState.isPenaltyTariff,
+                tariffRate: liveState.tariffRate,
+                appliances: Object.values(liveState.appliances)
+            };
+
+            if (index !== -1) {
+                homesList[index] = updatedHome;
+            } else {
+                homesList.push(updatedHome);
+            }
+
+            // Refresh UI grids dynamically with Zero Polling Overhead!
+            renderHomesGrid();
+            calculateGlobalStats();
+
+            // If details modal is open for this specific home, update it in real time
+            if (activeHomeId === homeId) {
+                updateHomeDetailsFromData(liveState);
+            }
+        } catch (err) {
+            console.error("Error processing streaming WebSocket message:", err);
+        }
+    };
+
+    socket.onclose = () => {
+        console.warn("WebSocket closed. Attempting reconnect in 3 seconds...");
+        setTimeout(connectWebSocket, 3000);
+    };
+
+    socket.onerror = (err) => {
+        console.error("WebSocket error:", err);
+    };
+}
 
 // Fetch all registered homes from PostgreSQL
 async function fetchHomes() {
@@ -246,21 +308,13 @@ async function openHomeDetailModal(id) {
     document.getElementById("ai-content-box").textContent = "";
     document.getElementById("ai-loading").classList.remove("hidden");
     
-    // Initial fetch of details and chart
+    // One-off load for AI recommendations, chart data, and initial state
     await updateHomeDetails();
     await fetchAndDrawTrendChart(id);
-    
-    // Set fast interval polling for live telemetry status (2 seconds)
-    if (detailPollInterval) clearInterval(detailPollInterval);
-    detailPollInterval = setInterval(updateHomeDetails, 2000);
 }
 
 function closeHomeDetailModal() {
     document.getElementById("modal-home-detail").classList.add("hidden");
-    if (detailPollInterval) {
-        clearInterval(detailPollInterval);
-        detailPollInterval = null;
-    }
     activeHomeId = null;
 }
 
@@ -304,6 +358,32 @@ async function updateHomeDetails() {
     } catch (err) {
         console.error("Telemetry poll error:", err);
     }
+}
+
+// Update live status inside details modal using streamed WebSocket data
+function updateHomeDetailsFromData(liveState) {
+    if (!activeHomeId) return;
+    
+    // Update Title & Metadata
+    document.getElementById("detail-home-name").textContent = liveState.name;
+    document.getElementById("detail-home-email").innerHTML = `<i class="fa-regular fa-envelope"></i> ${liveState.contactEmail}`;
+    document.getElementById("detail-quota-badge").textContent = `Bütçe Kotası: ${liveState.budgetQuota} TL`;
+    
+    // Update live metrics
+    document.getElementById("detail-cumulative-energy").textContent = `${liveState.cumulativeEnergyKwh.toFixed(4)} kWh`;
+    document.getElementById("detail-cumulative-cost").textContent = `${liveState.cumulativeCost.toFixed(2)} TL`;
+    document.getElementById("detail-tariff-rate").textContent = `${liveState.tariffRate.toFixed(2)} TL/kWh`;
+    
+    // Update Tariff Status Badge
+    const statusWrapper = document.getElementById("detail-tariff-status");
+    if (liveState.isPenaltyTariff) {
+        statusWrapper.innerHTML = `<span class="badge badge-red"><i class="fa-solid fa-triangle-exclamation"></i> Cezalı Tarife</span>`;
+    } else {
+        statusWrapper.innerHTML = `<span class="badge badge-blue"><i class="fa-solid fa-shield-halved"></i> Normal Tarife</span>`;
+    }
+    
+    // Render Appliance Grid dynamically
+    renderLiveAppliances(liveState.appliances, liveState.name);
 }
 
 // Render Appliance Cards inside detailed view
