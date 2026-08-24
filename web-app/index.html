@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VoltHome — Sürdürülebilir Enerji & IoT Yönetimi</title>
+    <title>VoltHome — Geleceğin Akıllı & Sürdürülebilir Enerji Yönetimi</title>
     <!-- Modern Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,13 +19,14 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="app-layout">
-        <!-- =================================================================== -->
-        <!-- SOL BAR / SIDEBAR NAVIGATION -->
-        <!-- =================================================================== -->
-        <aside class="app-sidebar">
-            <!-- Sidebar Brand Header -->
-            <div class="sidebar-brand">
+
+    <!-- =================================================================== -->
+    <!-- 1. DİNAMİK VE HAREKETLİ ANA SAYFA (LANDING / HERO PAGE) -->
+    <!-- =================================================================== -->
+    <div id="landing-page-view" class="landing-page-wrapper">
+        <!-- Landing Navbar -->
+        <header class="landing-navbar">
+            <div class="landing-brand" onclick="showLandingPage()">
                 <div class="sidebar-logo-icon">
                     <i class="fa-solid fa-leaf"></i>
                 </div>
@@ -35,7 +36,136 @@
                 </div>
             </div>
 
-            <!-- Live Status Pulse -->
+            <nav class="landing-nav-links">
+                <a href="#features" class="landing-nav-link">Platform Yetenekleri</a>
+                <a href="#demo3d" class="landing-nav-link" onclick="goTo3dDemo()">3D Simülasyon</a>
+                <a href="#tariffs" class="landing-nav-link">EPDK Tarifeleri</a>
+                <a href="#ai-coach" class="landing-nav-link">Gemini AI</a>
+            </nav>
+
+            <div class="landing-nav-actions">
+                <button id="btn-landing-login" class="btn btn-secondary btn-sm" onclick="showAuthModal('login')">
+                    <i class="fa-solid fa-arrow-right-to-bracket"></i> Giriş Yap
+                </button>
+                <button id="btn-landing-register" class="btn btn-primary btn-sm" onclick="showAuthModal('register')">
+                    <i class="fa-solid fa-user-plus"></i> Ücretsiz Başla
+                </button>
+                <button id="btn-landing-go-dashboard" class="btn btn-primary btn-sm hidden" onclick="showDashboardView()">
+                    <i class="fa-solid fa-gauge-high"></i> Kontrol Paneline Geç
+                </button>
+            </div>
+        </header>
+
+        <!-- Hero Section -->
+        <main class="hero-section">
+            <div class="hero-badge-pill">
+                <span class="pulsing-dot"></span>
+                <span>Yeni Nesil Gerçek Zamanlı IoT & AI Enerji Ekosistemi</span>
+            </div>
+
+            <h1 class="hero-title">
+                Evinizin Enerjisini <span class="text-gradient-eco">Otonom & Doğa Dostu</span> Yapay Zekayla Yönetin.
+            </h1>
+
+            <p class="hero-subtitle">
+                VoltHome; anlık telemetri, EPDK çok zamanlı dinamik tarife dökümü, 3D WebGL ev simülasyonu ve Gemini AI tasarruf danışmanlığı ile elektrik faturanızı %35'e varan oranda düşürür.
+            </p>
+
+            <div class="hero-cta-group">
+                <button class="btn-hero-primary" onclick="showAuthModal('register')">
+                    <i class="fa-solid fa-bolt"></i> Hemen Ücretsiz Başlayın
+                </button>
+                <button class="btn-hero-secondary" onclick="goTo3dDemo()">
+                    <i class="fa-solid fa-cube"></i> 3D Evi İnteraktif Keşfet
+                </button>
+            </div>
+
+            <!-- Live Stats Ticker Banner -->
+            <div class="hero-stats-banner">
+                <div class="stat-ticker-item">
+                    <h3>%35</h3>
+                    <p>Ortalama Fatura Tasarrufu</p>
+                </div>
+                <div class="stat-ticker-item">
+                    <h3>< 50 ms</h3>
+                    <p>Kafka & Ignite Telemetri Hızı</p>
+                </div>
+                <div class="stat-ticker-item">
+                    <h3>3D WebGL</h3>
+                    <p>FPS & İzometrik Simülasyon</p>
+                </div>
+                <div class="stat-ticker-item">
+                    <h3>0 Karbon</h3>
+                    <p>Sürdürülebilir Gelecek Hedefi</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- Platform Features Section -->
+        <section id="features" class="landing-features-section">
+            <div class="features-section-header">
+                <h2>Akıllı Evinizin Tüm Gücü Tek Platformda</h2>
+                <p>Milisaniyelik veri akışı ve yapay zeka ile ev bütçenizi ve doğayı koruyun</p>
+            </div>
+
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon-box bg-soft-green">
+                        <i class="fa-solid fa-cube"></i>
+                    </div>
+                    <h3>3D İnteraktif Ev Simülasyonu</h3>
+                    <p>Evinizi ister kuş bakışı ister FPS (karakter gözüyle) gezebilir; odalardaki cihazları 3D sahnede tek tıkla açıp kapatabilirsiniz.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon-box bg-soft-blue">
+                        <i class="fa-solid fa-chart-line"></i>
+                    </div>
+                    <h3>Canlı EPDK Tarife & Faturalandırma</h3>
+                    <p>Gündüz (T1) ve Gece (T2) tarife ayrımları, iletim bedelleri ve fonlarla resmi yazdırılabilir elektrik faturası oluşturun.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon-box bg-soft-orange">
+                        <i class="fa-solid fa-brain"></i>
+                    </div>
+                    <h3>Gemini AI Tasarruf Danışmanı</h3>
+                    <p>Kişiselleştirilmiş akıllı tasarruf reçeteleri, ay sonu bütçe projeksiyonu ve pik saat tüketim optimizasyonu.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon-box bg-soft-red">
+                        <i class="fa-solid fa-shield-halved"></i>
+                    </div>
+                    <h3>Otonom Koruma & Sigorta</h3>
+                    <p>Safe limit aşımı veya bütçe %80 doluluğunda cihazları otomatik devreden çıkaran akıllı kural motoru.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Landing Footer -->
+        <footer class="app-footer" style="padding: 30px 24px; text-align: center; border-top: 1px solid var(--border-light); margin-top: auto;">
+            <p>&copy; 2026 VoltHome Smart IoT Ecosystem. EPDK Entegreli Sürdürülebilir Enerji Yönetim Platformu.</p>
+        </footer>
+    </div>
+
+
+    <!-- =================================================================== -->
+    <!-- 2. PLATFORM KONTROL PANELİ (DASHBOARD LAYOUT) -->
+    <!-- =================================================================== -->
+    <div id="app-dashboard-view" class="app-layout hidden">
+        <!-- SOL BAR / SIDEBAR NAVIGATION -->
+        <aside class="app-sidebar">
+            <div class="sidebar-brand" onclick="showLandingPage()">
+                <div class="sidebar-logo-icon">
+                    <i class="fa-solid fa-leaf"></i>
+                </div>
+                <div class="sidebar-brand-text">
+                    <h2>VoltHome</h2>
+                    <span>Sürdürülebilir IoT</span>
+                </div>
+            </div>
+
             <div class="sidebar-status-pill">
                 <span class="pulsing-dot"></span>
                 <span>Canlı Telemetri Aktif</span>
@@ -81,6 +211,10 @@
                     <span>VoltHome PRO</span>
                     <span class="badge-pro-sidebar">PRO</span>
                 </button>
+                <button class="sidebar-nav-item" onclick="showLandingPage()">
+                    <i class="fa-solid fa-compass"></i>
+                    <span>Tanıtım Sayfası</span>
+                </button>
                 <a class="sidebar-nav-item" href="/swagger-ui.html" target="_blank">
                     <i class="fa-solid fa-code"></i>
                     <span>API Dokümantasyonu</span>
@@ -102,9 +236,7 @@
             </div>
         </aside>
 
-        <!-- =================================================================== -->
         <!-- MAIN CONTENT WRAPPER -->
-        <!-- =================================================================== -->
         <div class="main-content-wrapper">
             <!-- STICKY TOP METRICS BAR -->
             <header class="sticky-top-bar">
@@ -141,42 +273,32 @@
             </header>
 
             <main class="app-main-canvas">
-                <!-- =================================================================== -->
                 <!-- TAB 1: EVLERİM & CİHAZLAR -->
-                <!-- =================================================================== -->
                 <section id="tab-homes" class="tab-content active">
                     <section class="stats-overview">
                         <div class="stat-card eco-card">
-                            <div class="stat-icon bg-soft-blue">
-                                <i class="fa-solid fa-house"></i>
-                            </div>
+                            <div class="stat-icon bg-soft-blue"><i class="fa-solid fa-house"></i></div>
                             <div class="stat-info">
                                 <h3>Toplam Ev</h3>
                                 <p id="stat-total-homes">-</p>
                             </div>
                         </div>
                         <div class="stat-card eco-card">
-                            <div class="stat-icon bg-soft-green">
-                                <i class="fa-solid fa-bolt"></i>
-                            </div>
+                            <div class="stat-icon bg-soft-green"><i class="fa-solid fa-bolt"></i></div>
                             <div class="stat-info">
                                 <h3>Toplam Tüketim</h3>
                                 <p id="stat-total-energy">- kWh</p>
                             </div>
                         </div>
                         <div class="stat-card eco-card">
-                            <div class="stat-icon bg-soft-orange">
-                                <i class="fa-solid fa-receipt"></i>
-                            </div>
+                            <div class="stat-icon bg-soft-orange"><i class="fa-solid fa-receipt"></i></div>
                             <div class="stat-info">
                                 <h3>Toplam Bakiye</h3>
                                 <p id="stat-total-cost">- TL</p>
                             </div>
                         </div>
                         <div class="stat-card eco-card">
-                            <div class="stat-icon bg-soft-green">
-                                <i class="fa-solid fa-seedling"></i>
-                            </div>
+                            <div class="stat-icon bg-soft-green"><i class="fa-solid fa-seedling"></i></div>
                             <div class="stat-info">
                                 <h3>Önlenen CO₂ Salınımı</h3>
                                 <p id="stat-total-co2">- kg</p>
@@ -203,15 +325,11 @@
                             <p>Henüz kayıtlı bir ev bulunmamaktadır. Sağ üst köşeden yeni bir ev ekleyebilirsiniz.</p>
                         </div>
 
-                        <div id="homes-grid" class="homes-grid hidden">
-                            <!-- Injected -->
-                        </div>
+                        <div id="homes-grid" class="homes-grid hidden"></div>
                     </section>
                 </section>
 
-                <!-- =================================================================== -->
                 <!-- TAB 2: 3D EV SİMÜLASYONU -->
-                <!-- =================================================================== -->
                 <section id="tab-3d-sim" class="tab-content hidden">
                     <div class="sim-3d-header eco-card">
                         <div class="sim-3d-title">
@@ -265,9 +383,7 @@
                     </div>
                 </section>
 
-                <!-- =================================================================== -->
                 <!-- TAB 3: VERİ & İSTATİSTİK -->
-                <!-- =================================================================== -->
                 <section id="tab-analytics" class="tab-content hidden">
                     <div class="analytics-header eco-card">
                         <div class="analytics-title">
@@ -331,9 +447,7 @@
                     </div>
                 </section>
 
-                <!-- =================================================================== -->
                 <!-- TAB 4: FATURALARIM & DÖKÜM -->
-                <!-- =================================================================== -->
                 <section id="tab-invoices" class="tab-content hidden">
                     <div class="invoices-header eco-card">
                         <div class="invoices-title">
@@ -413,9 +527,7 @@
                     </div>
                 </section>
 
-                <!-- =================================================================== -->
                 <!-- TAB 5: AI TAHMİN RAPORU & DANIŞMAN -->
-                <!-- =================================================================== -->
                 <section id="tab-ai-prediction" class="tab-content hidden">
                     <div class="ai-tab-header eco-card">
                         <div class="ai-header-left">
@@ -507,9 +619,7 @@
                     </div>
                 </section>
 
-                <!-- =================================================================== -->
                 <!-- TAB 6: OTONOM SENARYOLAR -->
-                <!-- =================================================================== -->
                 <section id="tab-scenarios" class="tab-content hidden">
                     <div class="scenarios-header eco-card">
                         <div class="scenarios-title">
@@ -898,42 +1008,100 @@
     </div>
 
     <!-- =================================================================== -->
-    <!-- MODAL: LOGIN / REGISTER OVERLAY -->
+    <!-- 3. YENİLENEN MODERN SPLIT GİRİŞ & KAYIT MODALI (AUTH OVERLAY) -->
     <!-- =================================================================== -->
-    <div id="modal-auth" class="modal-overlay auth-overlay">
-        <div class="modal-content auth-content animated fade-in">
-            <div class="auth-tabs">
-                <button id="tab-login" class="auth-tab active" onclick="switchAuthTab('login')">Giriş Yap</button>
-                <button id="tab-register" class="auth-tab" onclick="switchAuthTab('register')">Kayıt Ol</button>
+    <div id="modal-auth" class="modal-overlay auth-overlay hidden">
+        <div class="auth-split-modal animated fade-in">
+            <!-- Sol Görsel / Tanıtım Paneli -->
+            <div class="auth-visual-side">
+                <div class="auth-visual-brand">
+                    <div class="auth-visual-brand-icon">
+                        <i class="fa-solid fa-leaf"></i>
+                    </div>
+                    <h3>VoltHome</h3>
+                </div>
+
+                <div class="auth-visual-center">
+                    <h2>Evinizin Enerji Geleceğine Adım Atın</h2>
+                    <p>Milisaniyelik akıllı telemetri ve yapay zeka ile faturalarınızı kontrol altına alın.</p>
+
+                    <ul class="auth-perks-list">
+                        <li><i class="fa-solid fa-check"></i> %35'e varan enerji tasarrufu</li>
+                        <li><i class="fa-solid fa-check"></i> 3D interaktif ev kontrolü</li>
+                        <li><i class="fa-solid fa-check"></i> EPDK çok zamanlı resmi fatura takibi</li>
+                        <li><i class="fa-solid fa-check"></i> Anomali ve aşırı yük sigortası</li>
+                    </ul>
+                </div>
+
+                <div class="auth-demo-hint" onclick="fillDemoCredentials()">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> <strong>Hızlı Demo Girişi:</strong> `testuser` / `Password123` (Tıklayın doldursun)
+                </div>
             </div>
-            
-            <form id="form-login" class="auth-form">
-                <div class="form-group">
-                    <label for="login-username">Kullanıcı Adı</label>
-                    <input type="text" id="login-username" placeholder="Kullanıcı adınızı girin" required>
+
+            <!-- Sağ Form Paneli -->
+            <div class="auth-form-side">
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                    <button class="btn-close-modal" onclick="hideAuthModal()">&times;</button>
                 </div>
-                <div class="form-group">
-                    <label for="login-password">Şifre</label>
-                    <input type="password" id="login-password" placeholder="Şifrenizi girin" required>
+
+                <div class="auth-tabs">
+                    <button id="tab-login" class="auth-tab active" onclick="switchAuthTab('login')">
+                        <i class="fa-solid fa-arrow-right-to-bracket"></i> Giriş Yap
+                    </button>
+                    <button id="tab-register" class="auth-tab" onclick="switchAuthTab('register')">
+                        <i class="fa-solid fa-user-plus"></i> Kayıt Ol
+                    </button>
                 </div>
-                <button type="submit" class="btn btn-primary btn-block">Giriş Yap</button>
-            </form>
-            
-            <form id="form-register" class="auth-form hidden">
-                <div class="form-group">
-                    <label for="register-username">Kullanıcı Adı</label>
-                    <input type="text" id="register-username" placeholder="Kullanıcı adı seçin" required>
-                </div>
-                <div class="form-group">
-                    <label for="register-email">E-posta Adresi</label>
-                    <input type="email" id="register-email" placeholder="E-posta adresinizi girin" required>
-                </div>
-                <div class="form-group">
-                    <label for="register-password">Şifre</label>
-                    <input type="password" id="register-password" placeholder="Şifrenizi oluşturun" required>
-                </div>
-                <button type="submit" class="btn btn-primary btn-block">Kayıt Ol</button>
-            </form>
+                
+                <!-- Giriş Formu -->
+                <form id="form-login" class="auth-form">
+                    <div class="form-group">
+                        <label for="login-username">Kullanıcı Adı</label>
+                        <div class="input-with-icon">
+                            <i class="fa-solid fa-user"></i>
+                            <input type="text" id="login-username" placeholder="Kullanıcı adınızı girin" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Şifre</label>
+                        <div class="input-with-icon">
+                            <i class="fa-solid fa-lock"></i>
+                            <input type="password" id="login-password" placeholder="Şifrenizi girin" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block" style="padding: 12px; font-size: 14px; margin-top: 10px;">
+                        Giriş Yap & Başla
+                    </button>
+                </form>
+                
+                <!-- Kayıt Formu -->
+                <form id="form-register" class="auth-form hidden">
+                    <div class="form-group">
+                        <label for="register-username">Kullanıcı Adı</label>
+                        <div class="input-with-icon">
+                            <i class="fa-solid fa-user"></i>
+                            <input type="text" id="register-username" placeholder="Kullanıcı adı belirleyin" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-email">E-posta Adresi</label>
+                        <div class="input-with-icon">
+                            <i class="fa-solid fa-envelope"></i>
+                            <input type="email" id="register-email" placeholder="E-posta adresinizi girin" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-password">Şifre</label>
+                        <div class="input-with-icon">
+                            <i class="fa-solid fa-lock"></i>
+                            <input type="password" id="register-password" placeholder="En az 6 karakterli şifre" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block" style="padding: 12px; font-size: 14px; margin-top: 10px;">
+                        Hesabımı Oluştur & Giriş Yap
+                    </button>
+                </form>
+            </div>
         </div>
     </div>
 

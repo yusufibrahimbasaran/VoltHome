@@ -65,9 +65,10 @@ async function initApp() {
     const token = getToken();
     if (!token) {
         removeToken();
-        showAuthModal("login");
+        showLandingPage();
     } else {
         hideAuthModal();
+        showDashboardView();
         updateUserUI();
         await loadHomes();
         initWebSocket();
@@ -168,18 +169,70 @@ function getSelectedHomeId(selectId) {
     return null;
 }
 
+// ─── VIEW ROUTING (LANDING PAGE vs DASHBOARD) ────────────────────────────────
+
+window.showLandingPage = function() {
+    const landing = document.getElementById("landing-page-view");
+    const dashboard = document.getElementById("app-dashboard-view");
+    if (landing) landing.classList.remove("hidden");
+    if (dashboard) dashboard.classList.add("hidden");
+
+    const token = getToken();
+    const btnGoDash = document.getElementById("btn-landing-go-dashboard");
+    const btnLogin = document.getElementById("btn-landing-login");
+    const btnRegister = document.getElementById("btn-landing-register");
+
+    if (token) {
+        if (btnGoDash) btnGoDash.classList.remove("hidden");
+        if (btnLogin) btnLogin.classList.add("hidden");
+        if (btnRegister) btnRegister.classList.add("hidden");
+    } else {
+        if (btnGoDash) btnGoDash.classList.add("hidden");
+        if (btnLogin) btnLogin.classList.remove("hidden");
+        if (btnRegister) btnRegister.classList.remove("hidden");
+    }
+};
+
+window.showDashboardView = function() {
+    const landing = document.getElementById("landing-page-view");
+    const dashboard = document.getElementById("app-dashboard-view");
+    if (landing) landing.classList.add("hidden");
+    if (dashboard) dashboard.classList.remove("hidden");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
+window.goTo3dDemo = function() {
+    const token = getToken();
+    if (token) {
+        showDashboardView();
+        switchMainTab("tab-3d-sim");
+    } else {
+        showToast("VoltHome 3D", "3D Simülasyonu deneyimlemek için lütfen giriş yapın veya ücretsiz kaydolun.", "warning");
+        showAuthModal("login");
+    }
+};
+
+window.fillDemoCredentials = function() {
+    switchAuthTab("login");
+    const u = document.getElementById("login-username");
+    const p = document.getElementById("login-password");
+    if (u) u.value = "testuser";
+    if (p) p.value = "Password123";
+    showToast("Demo Hesabı", "Bilgiler otomatik dolduruldu. 'Giriş Yap' butonuna tıklayabilirsiniz.", "success");
+};
+
 // ─── AUTHENTICATION LOGIC ────────────────────────────────────────────────────
 
-function showAuthModal(tab = "login") {
+window.showAuthModal = function(tab = "login") {
     const modal = document.getElementById("modal-auth");
     if (modal) modal.classList.remove("hidden");
     switchAuthTab(tab);
-}
+};
 
-function hideAuthModal() {
+window.hideAuthModal = function() {
     const modal = document.getElementById("modal-auth");
     if (modal) modal.classList.add("hidden");
-}
+};
 
 window.switchAuthTab = function(tab) {
     const tabLogin = document.getElementById("tab-login");
@@ -220,6 +273,7 @@ async function handleLoginSubmit(e) {
         setToken(token);
         localStorage.setItem("volthome_user", JSON.stringify({ username: data.username, email: data.email || "" }));
         hideAuthModal();
+        showDashboardView();
         updateUserUI();
         showToast("Başarılı", `Hoş geldiniz, ${data.username}!`, "success");
         await loadHomes();
@@ -250,6 +304,7 @@ async function handleRegisterSubmit(e) {
             setToken(token);
             localStorage.setItem("volthome_user", JSON.stringify({ username: data.username, email: data.email || email }));
             hideAuthModal();
+            showDashboardView();
             updateUserUI();
             showToast("Tebrikler!", "Hesabınız başarıyla oluşturuldu ve giriş yapıldı.", "success");
             await loadHomes();
@@ -267,7 +322,7 @@ async function handleRegisterSubmit(e) {
 window.handleLogout = function() {
     removeToken();
     if (wsClient) wsClient.close();
-    showAuthModal("login");
+    showLandingPage();
     document.getElementById("homes-grid").innerHTML = "";
     homesList = [];
     showToast("Çıkış Yapıldı", "Oturumunuz başarıyla kapatıldı.", "warning");
