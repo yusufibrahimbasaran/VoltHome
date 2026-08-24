@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VoltHome — Real-Time IoT Energy Analytics & Budget Control</title>
+    <title>VoltHome — Real-Time IoT Energy Analytics & 3D Smart Home</title>
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,104 +12,750 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Three.js & OrbitControls for 3D Simulator -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <!-- Custom CSS -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="app-container">
-        <!-- Sidebar or Header -->
-        <header class="app-header">
-            <div class="logo-area">
-                <div class="logo-icon">
+    <div class="app-layout">
+        <!-- =================================================================== -->
+        <!-- SOL BAR / SIDEBAR NAVIGATION -->
+        <!-- =================================================================== -->
+        <aside class="app-sidebar glass-panel">
+            <!-- Sidebar Brand Header -->
+            <div class="sidebar-brand">
+                <div class="sidebar-logo-icon">
                     <i class="fa-solid fa-bolt-lightning text-neon-blue"></i>
                 </div>
-                <div class="logo-text">
-                    <h1>VoltHome</h1>
-                    <p>Real-Time IoT Energy Analytics & Budget Control</p>
+                <div class="sidebar-brand-text">
+                    <h2>VoltHome</h2>
+                    <span>IoT Intelligence OS</span>
                 </div>
             </div>
-            <div class="header-actions">
-                <div id="user-info-display" class="user-info-block hidden">
-                    <span id="display-username"><i class="fa-solid fa-user"></i> Kullanıcı</span>
-                    <button id="btn-logout" class="btn btn-secondary btn-sm" onclick="handleLogout()">
-                        <i class="fa-solid fa-right-from-bracket"></i> Çıkış
-                    </button>
+
+            <!-- Live Status Pulse -->
+            <div class="sidebar-status-pill">
+                <span class="pulsing-dot green"></span>
+                <span>Canlı Telemetri Aktif</span>
+            </div>
+
+            <!-- Navigation Sections -->
+            <nav class="sidebar-nav">
+                <div class="nav-section-title">ANA MENÜ</div>
+                <button class="sidebar-nav-item active" data-tab="tab-homes" onclick="switchMainTab('tab-homes')">
+                    <i class="fa-solid fa-house-laptop"></i>
+                    <span>Evlerim & Cihazlar</span>
+                </button>
+                <button class="sidebar-nav-item" data-tab="tab-3d-sim" onclick="switchMainTab('tab-3d-sim')">
+                    <i class="fa-solid fa-cube text-neon-violet"></i>
+                    <span>3D Ev Simülasyonu</span>
+                    <span class="nav-badge-new">3D</span>
+                </button>
+                <button class="sidebar-nav-item" data-tab="tab-analytics" onclick="switchMainTab('tab-analytics')">
+                    <i class="fa-solid fa-chart-line text-neon-green"></i>
+                    <span>Veri & İstatistik</span>
+                </button>
+                <button class="sidebar-nav-item" data-tab="tab-invoices" onclick="switchMainTab('tab-invoices')">
+                    <i class="fa-solid fa-file-invoice-dollar text-neon-orange"></i>
+                    <span>Faturalarım & Tarife</span>
+                </button>
+                <button class="sidebar-nav-item" data-tab="tab-ai-prediction" onclick="switchMainTab('tab-ai-prediction')">
+                    <i class="fa-solid fa-wand-magic-sparkles text-neon-violet"></i>
+                    <span>AI Tahmin Raporu</span>
+                </button>
+                <button class="sidebar-nav-item" data-tab="tab-scenarios" onclick="switchMainTab('tab-scenarios')">
+                    <i class="fa-solid fa-robot text-neon-blue"></i>
+                    <span>Otonom Senaryolar</span>
+                </button>
+
+                <div class="nav-section-title">HIZLI SERVİSLER</div>
+                <button class="sidebar-nav-item" onclick="toggleNotificationDrawer()">
+                    <i class="fa-solid fa-inbox text-neon-blue"></i>
+                    <span>Gelen Kutusu & Alarmlar</span>
+                    <span id="sidebar-notif-badge" class="badge-count-sidebar">0</span>
+                </button>
+                <button class="sidebar-nav-item" onclick="openProModal()">
+                    <i class="fa-solid fa-crown text-neon-orange"></i>
+                    <span>VoltHome PRO</span>
+                    <span class="badge-pro-sidebar">PRO</span>
+                </button>
+                <a class="sidebar-nav-item" href="/swagger-ui.html" target="_blank">
+                    <i class="fa-solid fa-code text-neon-green"></i>
+                    <span>OpenAPI / Swagger</span>
+                </a>
+            </nav>
+
+            <!-- Sidebar User Profile Footer -->
+            <div class="sidebar-user-footer">
+                <div class="user-avatar-icon">
+                    <i class="fa-solid fa-user-astronaut"></i>
                 </div>
-                <button id="btn-open-add-home" class="btn btn-primary">
-                    <i class="fa-solid fa-plus"></i> Yeni Ev Ekle
+                <div class="user-info-text">
+                    <strong id="sidebar-username">Kullanıcı</strong>
+                    <span id="sidebar-user-role">Standart Üye</span>
+                </div>
+                <button class="btn-sidebar-logout" onclick="handleLogout()" title="Oturumu Kapat">
+                    <i class="fa-solid fa-power-off"></i>
                 </button>
             </div>
-        </header>
+        </aside>
 
-        <!-- Main Body -->
-        <main class="app-main">
-            <!-- Global Dashboard Stats -->
-            <section class="stats-overview">
-                <div class="stat-card glass-panel">
-                    <div class="stat-icon bg-soft-blue">
-                        <i class="fa-solid fa-house-chimney text-neon-blue"></i>
-                    </div>
-                    <div class="stat-info">
-                        <h3>Toplam Ev</h3>
-                        <p id="stat-total-homes">-</p>
-                    </div>
-                </div>
-                <div class="stat-card glass-panel">
-                    <div class="stat-icon bg-soft-green">
-                        <i class="fa-solid fa-plug text-neon-green"></i>
-                    </div>
-                    <div class="stat-info">
-                        <h3>Toplam Tüketim</h3>
-                        <p id="stat-total-energy">- kWh</p>
-                    </div>
-                </div>
-                <div class="stat-card glass-panel">
-                    <div class="stat-icon bg-soft-orange">
-                        <i class="fa-solid fa-turkish-lira-sign text-neon-orange"></i>
-                    </div>
-                    <div class="stat-info">
-                        <h3>Toplam Bakiye</h3>
-                        <p id="stat-total-cost">- TL</p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Homes Grid Section -->
-            <section class="homes-section">
-                <div class="section-header">
-                    <h2><i class="fa-solid fa-gauge-high"></i> Ev Durum Paneli</h2>
-                    <div class="live-indicator-wrapper">
+        <!-- =================================================================== -->
+        <!-- MAIN CONTENT WRAPPER -->
+        <!-- =================================================================== -->
+        <div class="main-content-wrapper">
+            <!-- STICKY TOP METRICS BAR -->
+            <header class="sticky-top-bar glass-panel">
+                <div class="top-bar-left">
+                    <div class="live-metric-pill" title="Tüm evlerin anlık toplam güç çekimi">
                         <span class="pulsing-dot green"></span>
-                        <span class="indicator-text">Canlı Telemetri Aktif (2s)</span>
+                        <span class="pill-label">Canlı Güç:</span>
+                        <strong id="top-live-power" class="pill-val text-neon-green">0.00 kW</strong>
+                    </div>
+                    <div class="live-metric-pill" title="EPDK Dinamik Zaman Dilimi">
+                        <i class="fa-solid fa-clock text-neon-violet"></i>
+                        <span class="pill-label">Tarife:</span>
+                        <strong id="top-active-tariff" class="pill-val text-neon-violet">Gündüz (3.85 TL/kWh)</strong>
+                    </div>
+                    <div class="live-metric-pill" title="Güncel Toplam Harcama">
+                        <i class="fa-solid fa-turkish-lira-sign text-neon-orange"></i>
+                        <span class="pill-label">Fatura:</span>
+                        <strong id="top-live-cost" class="pill-val text-neon-orange">0.00 TL</strong>
                     </div>
                 </div>
 
-                <div id="homes-loading" class="loading-state">
-                    <div class="spinner"></div>
-                    <p>Ev verileri yükleniyor...</p>
+                <div class="top-bar-right">
+                    <button id="btn-notification-bell" class="btn-icon-top" onclick="toggleNotificationDrawer()" title="Bildirim Merkezi">
+                        <i class="fa-solid fa-bell"></i>
+                        <span id="notif-badge" class="badge-count">0</span>
+                    </button>
+                    <button class="btn-pro-pill" onclick="openProModal()">
+                        <i class="fa-solid fa-crown text-neon-orange"></i> PRO Plan
+                    </button>
+                    <button id="btn-open-add-home" class="btn btn-primary btn-sm" onclick="openAddHomeModal()">
+                        <i class="fa-solid fa-plus"></i> Yeni Ev Ekle
+                    </button>
                 </div>
+            </header>
 
-                <div id="homes-empty" class="empty-state hidden">
-                    <i class="fa-solid fa-circle-info"></i>
-                    <p>Henüz kayıtlı bir ev bulunmamaktadır. Sağ üst köşeden yeni bir ev kaydedebilirsiniz.</p>
-                </div>
+            <main class="app-main-canvas">
+                <!-- =================================================================== -->
+                <!-- TAB 1: EVLERİM & CİHAZLAR -->
+                <!-- =================================================================== -->
+                <section id="tab-homes" class="tab-content active">
+                    <section class="stats-overview">
+                        <div class="stat-card glass-panel">
+                            <div class="stat-icon bg-soft-blue">
+                                <i class="fa-solid fa-house-chimney text-neon-blue"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3>Toplam Ev</h3>
+                                <p id="stat-total-homes">-</p>
+                            </div>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <div class="stat-icon bg-soft-green">
+                                <i class="fa-solid fa-plug text-neon-green"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3>Toplam Tüketim</h3>
+                                <p id="stat-total-energy">- kWh</p>
+                            </div>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <div class="stat-icon bg-soft-orange">
+                                <i class="fa-solid fa-turkish-lira-sign text-neon-orange"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3>Toplam Bakiye</h3>
+                                <p id="stat-total-cost">- TL</p>
+                            </div>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <div class="stat-icon bg-soft-violet">
+                                <i class="fa-solid fa-leaf text-neon-green"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3>Önlenen CO₂</h3>
+                                <p id="stat-total-co2">- kg</p>
+                            </div>
+                        </div>
+                    </section>
 
-                <div id="homes-grid" class="homes-grid hidden">
-                    <!-- Home Cards will be dynamically inserted here -->
-                </div>
-            </section>
-        </main>
+                    <section class="homes-section">
+                        <div class="section-header">
+                            <h2><i class="fa-solid fa-gauge-high text-neon-blue"></i> Akıllı Ev & Cihaz Yönetim Paneli</h2>
+                            <div class="live-indicator-wrapper">
+                                <span class="pulsing-dot green"></span>
+                                <span class="indicator-text">Canlı IoT Telemetrisi Aktif (2s)</span>
+                            </div>
+                        </div>
 
-        <footer class="app-footer">
-            <p>&copy; 2026 VoltHome Smart Ecosystem. Tüm Hakları Saklıdır.</p>
-        </footer>
+                        <div id="homes-loading" class="loading-state">
+                            <div class="spinner"></div>
+                            <p>Ev ve cihaz verileri yükleniyor...</p>
+                        </div>
+
+                        <div id="homes-empty" class="empty-state hidden">
+                            <i class="fa-solid fa-circle-info"></i>
+                            <p>Henüz kayıtlı bir ev bulunmamaktadır. Sağ üst köşeden yeni bir ev kaydedebilirsiniz.</p>
+                        </div>
+
+                        <div id="homes-grid" class="homes-grid hidden"></div>
+                    </section>
+                </section>
+
+                <!-- =================================================================== -->
+                <!-- TAB 2: 3D EV SİMÜLASYONU (NEW 3D WEBGL ENGINE) -->
+                <!-- =================================================================== -->
+                <section id="tab-3d-sim" class="tab-content hidden">
+                    <div class="sim-3d-header glass-panel">
+                        <div class="sim-3d-title">
+                            <h2><i class="fa-solid fa-cube text-neon-violet"></i> 3D Akıllı Ev İzometrik & FPS Simülatörü</h2>
+                            <p>Evinizi 3D odalar halinde inceleyin, karakterinizle FPS modunda gezin ve cihazları 3D sahnede yönetin</p>
+                        </div>
+
+                        <div class="sim-3d-toolbar">
+                            <div class="hud-control-group">
+                                <label><i class="fa-solid fa-user-gear text-neon-blue"></i> Karakter:</label>
+                                <select id="select-character" class="hud-select" onchange="setCharacterType(this.value)">
+                                    <option value="ROBOT">🤖 Akıllı Robot</option>
+                                    <option value="MAN">👨 Erkek</option>
+                                    <option value="WOMAN">👩 Kadın</option>
+                                    <option value="CHILD">🧒 Çocuk</option>
+                                </select>
+                            </div>
+
+                            <div class="hud-control-group">
+                                <label><i class="fa-solid fa-cloud-sun text-neon-orange"></i> Ortam / Hava:</label>
+                                <select id="select-weather" class="hud-select" onchange="setWeatherMode(this.value)">
+                                    <option value="SUNNY">☀️ Gündüz & Güneşli</option>
+                                    <option value="NIGHT">🌙 Gece (Oda Işıkları)</option>
+                                    <option value="RAIN">🌧️ Yağmurlu Partikül</option>
+                                </select>
+                            </div>
+
+                            <button id="btn-toggle-fps" class="btn btn-secondary btn-sm" onclick="toggleFpsMode()">
+                                <i class="fa-solid fa-gamepad text-neon-blue"></i> FPS Moduna Geç (Karakter Gözü)
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="canvas-3d-viewport glass-panel">
+                        <div id="canvas-3d-container" class="canvas-3d-container"></div>
+                        
+                        <div id="fps-hud-instructions" class="fps-hud-overlay hidden">
+                            <div class="fps-crosshair">+</div>
+                            <div class="fps-instructions-card glass-panel">
+                                <i class="fa-solid fa-keyboard text-neon-green"></i> <strong>Hareket:</strong> [W, A, S, D] veya Yön Tuşları | <strong>Kamera:</strong> Fareyi Çevirin | Çıkış için tekrar butona basın.
+                            </div>
+                        </div>
+
+                        <div class="sim-3d-legend glass-panel">
+                            <span><i class="fa-solid fa-circle text-neon-blue"></i> Salon</span>
+                            <span><i class="fa-solid fa-circle text-neon-orange"></i> Mutfak</span>
+                            <span><i class="fa-solid fa-circle text-neon-violet"></i> Yatak Odası</span>
+                            <span><i class="fa-solid fa-circle text-neon-green"></i> Banyo</span>
+                            <span class="legend-hint"><i class="fa-solid fa-hand-pointer"></i> 3D Cihaza tıklayarak Aç/Kapat yapabilirsiniz.</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- =================================================================== -->
+                <!-- TAB 3: VERİ & İSTATİSTİK -->
+                <!-- =================================================================== -->
+                <section id="tab-analytics" class="tab-content hidden">
+                    <div class="analytics-header glass-panel">
+                        <div class="analytics-title">
+                            <h2><i class="fa-solid fa-chart-pie text-neon-blue"></i> Enerji Analitiği & İstatistik Merkezi</h2>
+                            <p>Anlık güç tüketim dağılımı, pik saatler ve tasarruf verimlilik ölçümleri</p>
+                        </div>
+                        <div class="analytics-home-selector">
+                            <label for="analytics-home-select"><i class="fa-solid fa-house"></i> Ev Seçin:</label>
+                            <select id="analytics-home-select" class="rule-select" onchange="loadAnalyticsData()"></select>
+                        </div>
+                    </div>
+
+                    <div class="analytics-grid">
+                        <div class="analytics-card glass-panel wide-card">
+                            <div class="card-header-flex">
+                                <h3><i class="fa-solid fa-chart-area text-neon-green"></i> 24 Saatlik Güç & Tüketim Trendi (kWh)</h3>
+                                <span class="badge badge-green">Canlı Veri</span>
+                            </div>
+                            <div class="chart-container large-chart">
+                                <canvas id="chart-analytics-trends"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="analytics-card glass-panel">
+                            <div class="card-header-flex">
+                                <h3><i class="fa-solid fa-chart-donut text-neon-violet"></i> Cihaz Bazlı Enerji Payı (%)</h3>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="chart-appliance-pie"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="analytics-card glass-panel">
+                            <div class="card-header-flex">
+                                <h3><i class="fa-solid fa-seedling text-neon-green"></i> Karbon & Verimlilik Karnesi</h3>
+                            </div>
+                            <div class="green-metrics-list">
+                                <div class="green-metric-item">
+                                    <i class="fa-solid fa-tree text-neon-green"></i>
+                                    <div>
+                                        <span>Ağaç Eşdeğeri Tasarruf</span>
+                                        <strong id="metric-trees">1.4 Ağaç</strong>
+                                    </div>
+                                </div>
+                                <div class="green-metric-item">
+                                    <i class="fa-solid fa-cloud-arrow-down text-neon-blue"></i>
+                                    <div>
+                                        <span>Önlenen CO₂ Salınımı</span>
+                                        <strong id="metric-co2-saved">18.6 kg CO₂</strong>
+                                    </div>
+                                </div>
+                                <div class="green-metric-item">
+                                    <i class="fa-solid fa-bolt text-neon-orange"></i>
+                                    <div>
+                                        <span>Gece Tarifesi Tasarruf Oranı</span>
+                                        <strong id="metric-night-saving">%28.4 TL Kazanç</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- =================================================================== -->
+                <!-- TAB 4: FATURALARIM & DÖKÜM -->
+                <!-- =================================================================== -->
+                <section id="tab-invoices" class="tab-content hidden">
+                    <div class="invoices-header glass-panel">
+                        <div class="invoices-title">
+                            <h2><i class="fa-solid fa-file-invoice-dollar text-neon-orange"></i> Fatura & Harcama Takibi</h2>
+                            <p>EPDK çok zamanlı elektrik tarifesi dökümü, aktif dönem tutarı ve geçmiş fatura arşivi</p>
+                        </div>
+                        <div class="analytics-home-selector">
+                            <label for="invoice-home-select"><i class="fa-solid fa-house"></i> Ev Seçin:</label>
+                            <select id="invoice-home-select" class="rule-select" onchange="loadInvoiceData()"></select>
+                        </div>
+                    </div>
+
+                    <div class="invoices-grid">
+                        <div class="invoice-summary-card glass-panel">
+                            <div class="invoice-badge-row">
+                                <span class="badge badge-orange"><i class="fa-solid fa-hourglass-half"></i> GÜNCEL DÖNEM FATURASI</span>
+                                <span id="inv-current-period" class="invoice-period-text">Ağustos 2026</span>
+                            </div>
+                            <div class="current-bill-amount-block">
+                                <span class="bill-label">Ödenecek Tahmini Tutar:</span>
+                                <h1 id="inv-current-total" class="text-neon-orange">0.00 TL</h1>
+                                <p class="bill-sub">Son Ödeme Tarihi: <strong id="inv-current-due">15.09.2026</strong></p>
+                            </div>
+
+                            <div class="bill-breakdown-table">
+                                <div class="bill-row">
+                                    <span>Toplam Aktif Tüketim:</span>
+                                    <strong id="inv-current-kwh">0.00 kWh</strong>
+                                </div>
+                                <div class="bill-row">
+                                    <span>Gündüz T1 Tüketimi (3.85 TL/kWh):</span>
+                                    <strong id="inv-current-day">0.00 kWh</strong>
+                                </div>
+                                <div class="bill-row">
+                                    <span>Gece T2 Tüketimi (2.10 TL/kWh):</span>
+                                    <strong id="inv-current-night">0.00 kWh</strong>
+                                </div>
+                                <div class="bill-row">
+                                    <span>Dağıtım & İletim Bedeli:</span>
+                                    <strong id="inv-current-dist">0.00 TL</strong>
+                                </div>
+                                <div class="bill-row">
+                                    <span>Enerji Fonu & TRT Payı:</span>
+                                    <strong id="inv-current-tax">0.00 TL</strong>
+                                </div>
+                                <div class="bill-row">
+                                    <span>KDV (%20):</span>
+                                    <strong id="inv-current-kdv">0.00 TL</strong>
+                                </div>
+                            </div>
+
+                            <div class="invoice-actions">
+                                <button class="btn btn-primary btn-block" onclick="openPrintInvoiceModal()">
+                                    <i class="fa-solid fa-print"></i> Resmi Fatura Görüntüle & Yazdır (PDF)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="invoice-history-card glass-panel">
+                            <h3><i class="fa-solid fa-box-archive text-neon-blue"></i> Geçmiş Dönem Fatura Arşivi</h3>
+                            <div class="table-responsive">
+                                <table class="styled-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Fatura No</th>
+                                            <th>Dönem</th>
+                                            <th>Tüketim</th>
+                                            <th>Tutar</th>
+                                            <th>Durum</th>
+                                            <th>İşlem</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="past-invoices-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- =================================================================== -->
+                <!-- TAB 5: AI TAHMİN RAPORU & DANIŞMAN -->
+                <!-- =================================================================== -->
+                <section id="tab-ai-prediction" class="tab-content hidden">
+                    <div class="ai-tab-header glass-panel">
+                        <div class="ai-header-left">
+                            <h2><i class="fa-solid fa-brain-circuit text-neon-violet"></i> VoltHome AI Enerji Tahminleme & Danışman</h2>
+                            <p>Google Gemini LLM ve lineer projeksiyon algoritmalarıyla gelecek dönem tüketim simülasyonu</p>
+                        </div>
+                        <div class="analytics-home-selector">
+                            <label for="ai-home-select"><i class="fa-solid fa-house"></i> Ev Seçin:</label>
+                            <select id="ai-home-select" class="rule-select" onchange="loadAiPredictionData()"></select>
+                        </div>
+                    </div>
+
+                    <div class="prediction-bar glass-panel mb-24">
+                        <div class="prediction-bar-header">
+                            <span><i class="fa-solid fa-chart-line-up text-neon-violet"></i> Ay Sonu Tüketim & Fatura Projeksiyonu</span>
+                            <span id="tab-pred-status-badge" class="badge badge-blue">Yükleniyor...</span>
+                        </div>
+                        <div class="prediction-bar-metrics">
+                            <div class="pred-metric">
+                                <span>Tahmin (kWh)</span>
+                                <strong id="tab-pred-kwh">-</strong>
+                            </div>
+                            <div class="pred-metric">
+                                <span>Tahmin (TL)</span>
+                                <strong id="tab-pred-cost">-</strong>
+                            </div>
+                            <div class="pred-metric">
+                                <span>Bütçe Kotası</span>
+                                <strong id="tab-pred-quota">-</strong>
+                            </div>
+                            <div class="pred-metric">
+                                <span>Kalan Gün</span>
+                                <strong id="tab-pred-days-remaining">-</strong>
+                            </div>
+                            <div class="pred-metric">
+                                <span>Aktif Tarife</span>
+                                <strong id="tab-pred-tariff-label">-</strong>
+                            </div>
+                            <div class="pred-metric">
+                                <span>Fark (%)</span>
+                                <strong id="tab-pred-overshoot">-</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ai-tab-layout">
+                        <div class="ai-card glass-panel">
+                            <div class="ai-card-header">
+                                <h3><i class="fa-solid fa-wand-magic-sparkles text-neon-violet"></i> Yapay Zeka Tasarruf Tavsiyeleri</h3>
+                                <button class="btn btn-secondary btn-sm" onclick="triggerAiFromTab()">
+                                    <i class="fa-solid fa-arrows-rotate"></i> Yeniden Analiz Et
+                                </button>
+                            </div>
+                            <div class="ai-card-body">
+                                <div id="tab-ai-loading" class="ai-loader hidden">
+                                    <div class="spinner spinner-violet"></div>
+                                    <p>Gemini yapay zeka modeli tüketim verilerinizi analiz ediyor...</p>
+                                </div>
+                                <div id="tab-ai-content" class="ai-text-content"></div>
+                            </div>
+                        </div>
+
+                        <div class="ai-card glass-panel">
+                            <h3><i class="fa-solid fa-list-check text-neon-green"></i> Akıllı Aksiyon Planı & Kazanç</h3>
+                            <div class="action-plan-list">
+                                <div class="action-plan-item">
+                                    <div class="action-icon bg-soft-green"><i class="fa-solid fa-clock-rotate-left text-neon-green"></i></div>
+                                    <div class="action-text">
+                                        <h4>Yüksek Güçlü Cihazları Geceye Kaydırın</h4>
+                                        <p>Çamaşır ve bulaşık makinesini 22:00 sonrasına erteleyerek <strong>%35 tasarruf</strong> sağlayın.</p>
+                                    </div>
+                                </div>
+                                <div class="action-plan-item">
+                                    <div class="action-icon bg-soft-blue"><i class="fa-solid fa-snowflake text-neon-blue"></i></div>
+                                    <div class="action-text">
+                                        <h4>Klima Eko Modu (24°C)</h4>
+                                        <p>Sıcaklığı 21°C yerine 24°C'de tutmak faturanızda yaklaşık <strong>180 TL</strong> düşüş sağlar.</p>
+                                    </div>
+                                </div>
+                                <div class="action-plan-item">
+                                    <div class="action-icon bg-soft-orange"><i class="fa-solid fa-shield-halved text-neon-orange"></i></div>
+                                    <div class="action-text">
+                                        <h4>Otomasyon Kuralı Ekleyin</h4>
+                                        <p>Bütçe %80'e ulaştığında kritik olmayan cihazların otomatik kapatılmasını sağlayın.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- =================================================================== -->
+                <!-- TAB 6: OTONOM SENARYOLAR -->
+                <!-- =================================================================== -->
+                <section id="tab-scenarios" class="tab-content hidden">
+                    <div class="scenarios-header glass-panel">
+                        <div class="scenarios-title">
+                            <h2><i class="fa-solid fa-robot text-neon-blue"></i> Akıllı IoT Otonom Senaryoları</h2>
+                            <p>Evinizi ve cihazlarınızı bütçe, tarife ve anomali koşullarına göre otonom yöneten akıllı kurallar</p>
+                        </div>
+                        <div class="analytics-home-selector">
+                            <label for="scenarios-home-select"><i class="fa-solid fa-house"></i> Ev Seçin:</label>
+                            <select id="scenarios-home-select" class="rule-select" onchange="loadScenariosData()"></select>
+                        </div>
+                    </div>
+
+                    <h3 class="section-subheading"><i class="fa-solid fa-wand-magic"></i> Hazır Akıllı Senaryolar</h3>
+                    <div class="preset-scenarios-grid">
+                        <div class="preset-card glass-panel">
+                            <div class="preset-icon bg-soft-blue"><i class="fa-solid fa-moon text-neon-blue"></i></div>
+                            <div class="preset-info">
+                                <h4>Gece Eko Modu</h4>
+                                <p>23:00 - 06:00 saatleri arasında beklemedeki priz ve gereksiz aydınlatmaları kapatır.</p>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" checked onchange="togglePresetScenario('NIGHT_ECO', this.checked)">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+
+                        <div class="preset-card glass-panel">
+                            <div class="preset-icon bg-soft-orange"><i class="fa-solid fa-bolt text-neon-orange"></i></div>
+                            <div class="preset-info">
+                                <h4>Pik Tarife Koruyucu</h4>
+                                <p>17:00 - 22:00 pik tarife saatlerinde 1500W üzeri cihazların aşırı çalışmasını sınırlar.</p>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" checked onchange="togglePresetScenario('PEAK_TARIFF', this.checked)">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+
+                        <div class="preset-card glass-panel">
+                            <div class="preset-icon bg-soft-red"><i class="fa-solid fa-triangle-exclamation text-neon-red"></i></div>
+                            <div class="preset-info">
+                                <h4>Aşırı Yük & Yangın Sigortası</h4>
+                                <p>Safe limitini aşan ve ardışık 3 kez anomali üreten cihazları anında şebekeden keser.</p>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" checked onchange="togglePresetScenario('ANOMALY_SAFE', this.checked)">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+
+                        <div class="preset-card glass-panel">
+                            <div class="preset-icon bg-soft-green"><i class="fa-solid fa-piggy-bank text-neon-green"></i></div>
+                            <div class="preset-info">
+                                <h4>%80 Bütçe Koruma Kilidi</h4>
+                                <p>Aylık kota %80 sınırına geldiğinde tasarruf moduna geçer ve uyarır.</p>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" checked onchange="togglePresetScenario('BUDGET_80_LOCK', this.checked)">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="custom-rules-panel glass-panel mt-24">
+                        <div class="automation-panel-header">
+                            <h3><i class="fa-solid fa-sliders text-neon-blue"></i> Özel Tanımlı IoT Kuralları</h3>
+                            <button class="btn btn-secondary btn-sm" onclick="openAddRuleForm()">
+                                <i class="fa-solid fa-plus"></i> Yeni Kural Tanımla
+                            </button>
+                        </div>
+
+                        <div id="add-rule-form" class="add-rule-form hidden">
+                            <select id="rule-device-type" class="rule-select">
+                                <option value="*">Tüm Cihazlar</option>
+                                <option value="AC">Klima (AC)</option>
+                                <option value="HEATER">Isıtıcı</option>
+                                <option value="WASHING_MACHINE">Çamaşır Makinesi</option>
+                                <option value="REFRIGERATOR">Buzdolabı</option>
+                                <option value="OTHER">Diğer</option>
+                            </select>
+                            <select id="rule-trigger-type" class="rule-select" onchange="updateRuleTriggerUI()">
+                                <option value="ANOMALY">Anomali Tespitinde</option>
+                                <option value="BUDGET_80">Bütçe %80 Aşımında</option>
+                                <option value="BUDGET_100">Bütçe %100 Aşımında</option>
+                                <option value="WATTAGE_EXCEED">Watt Limiti Aşımında</option>
+                            </select>
+                            <input type="number" id="rule-trigger-value" class="rule-input hidden" placeholder="Eşik Değeri (W)" min="0">
+                            <select id="rule-action" class="rule-select">
+                                <option value="SHUTDOWN">Cihazı Kapat (SHUTDOWN)</option>
+                                <option value="LOG_ONLY">Yalnızca Kaydet (LOG_ONLY)</option>
+                            </select>
+                            <div class="rule-form-actions">
+                                <button class="btn btn-primary btn-sm" onclick="submitNewRule()">Kaydet</button>
+                                <button class="btn btn-secondary btn-sm" onclick="closeAddRuleForm()">İptal</button>
+                            </div>
+                        </div>
+
+                        <div id="tab-automation-rules-list" class="automation-rules-list"></div>
+                    </div>
+                </section>
+            </main>
+
+            <footer class="app-footer">
+                <p>&copy; 2026 VoltHome Smart IoT Ecosystem. EPDK Entegreli Akıllı Enerji Yönetim Platformu.</p>
+            </footer>
+        </div>
     </div>
 
+    <!-- =================================================================== -->
+    <!-- SLIDE-OVER NOTIFICATION DRAWER -->
+    <!-- =================================================================== -->
+    <div id="drawer-notifications" class="drawer-overlay hidden" onclick="toggleNotificationDrawer()">
+        <div class="drawer-content glass-panel" onclick="event.stopPropagation()">
+            <div class="drawer-header">
+                <h3><i class="fa-solid fa-inbox text-neon-blue"></i> Bildirim Merkezi & Alarmlar</h3>
+                <button class="btn-close-modal" onclick="toggleNotificationDrawer()">&times;</button>
+            </div>
+            <div id="notifications-list" class="notifications-list"></div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- MODAL: VOLTHOME PRO MEMBERSHIP -->
+    <!-- =================================================================== -->
+    <div id="modal-pro" class="modal-overlay hidden">
+        <div class="modal-content glass-panel pro-modal-content animated fade-in">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-crown text-neon-orange"></i> VoltHome PRO Ekosistem Planları</h2>
+                <button class="btn-close-modal" onclick="closeProModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="pricing-grid">
+                    <div class="pricing-card glass-panel">
+                        <div class="plan-badge">Standart</div>
+                        <h3>Başlangıç</h3>
+                        <div class="price">0 ₺<span>/ay</span></div>
+                        <ul class="features-list">
+                            <li><i class="fa-solid fa-check text-neon-green"></i> 1 Adet Ev / 5 Cihaz</li>
+                            <li><i class="fa-solid fa-check text-neon-green"></i> Canlı Telemetri (2s)</li>
+                            <li><i class="fa-solid fa-check text-neon-green"></i> Standart Tarife Takibi</li>
+                            <li class="disabled"><i class="fa-solid fa-xmark"></i> Gemini AI Sınırsız Danışman</li>
+                            <li class="disabled"><i class="fa-solid fa-xmark"></i> 3D İnteraktif Simülasyon</li>
+                        </ul>
+                        <button class="btn btn-secondary btn-block disabled">Mevcut Plan</button>
+                    </div>
+
+                    <div class="pricing-card glass-panel pro-highlight">
+                        <div class="plan-badge bg-gradient-orange">En Popüler</div>
+                        <h3>VoltHome PRO</h3>
+                        <div class="price">149 ₺<span>/ay</span></div>
+                        <ul class="features-list">
+                            <li><i class="fa-solid fa-check text-neon-green"></i> Sınırsız Ev & Cihaz Yönetimi</li>
+                            <li><i class="fa-solid fa-check text-neon-green"></i> Sınırsız Gemini AI Tasarruf Koçu</li>
+                            <li><i class="fa-solid fa-check text-neon-green"></i> 3D İnteraktif İzometrik & FPS Simülasyonu</li>
+                            <li><i class="fa-solid fa-check text-neon-green"></i> Otomatik Cihaz Kapatma ve Güç Sigortası</li>
+                            <li><i class="fa-solid fa-check text-neon-green"></i> Resmi PDF Fatura İndirme</li>
+                        </ul>
+                        <button class="btn btn-primary btn-block" onclick="activateProPlan()">PRO'ya Yükselt <i class="fa-solid fa-bolt"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- MODAL: OFFICIAL INVOICE VIEW & PRINT / PDF -->
+    <!-- =================================================================== -->
+    <div id="modal-invoice-detail" class="modal-overlay hidden">
+        <div class="modal-content glass-panel invoice-modal-content animated fade-in">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-file-invoice text-neon-blue"></i> Resmi Elektrik Tüketim Faturası</h2>
+                <div class="modal-header-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="window.print()"><i class="fa-solid fa-print"></i> Yazdır</button>
+                    <button class="btn-close-modal" onclick="closePrintInvoiceModal()">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body scrollable-body printable-invoice-area">
+                <div class="official-invoice-header">
+                    <div class="company-brand">
+                        <h2>VOLTHOME ENERJİ A.Ş.</h2>
+                        <p>EPDK Lisans No: ET/2026-VOLT-09881 | Mersis: 08920192830001</p>
+                    </div>
+                    <div class="invoice-meta-right">
+                        <h3 id="pdf-invoice-no">VOLT-2026-08-0001</h3>
+                        <p>Düzenleme Tarihi: 24.08.2026</p>
+                        <p>Son Ödeme Tarihi: <strong id="pdf-due-date">15.09.2026</strong></p>
+                    </div>
+                </div>
+
+                <div class="subscriber-info-box">
+                    <div>
+                        <span class="info-label">Abone / Ev:</span>
+                        <strong id="pdf-subscriber-name">-</strong>
+                    </div>
+                    <div>
+                        <span class="info-label">İletişim:</span>
+                        <strong id="pdf-subscriber-email">-</strong>
+                    </div>
+                    <div>
+                        <span class="info-label">Tarife Grubu:</span>
+                        <strong>Mesken Çok Zamanlı (T1 Gündüz / T2 Gece)</strong>
+                    </div>
+                </div>
+
+                <table class="official-table">
+                    <thead>
+                        <tr>
+                            <th>Hizmet / Tüketim Kalemi</th>
+                            <th>Miktar</th>
+                            <th>Birim Fiyat</th>
+                            <th>Tutar (TL)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pdf-invoice-items"></tbody>
+                    <tfoot>
+                        <tr>
+                            <th colspan="3" class="text-right">Enerji & Dağıtım Ara Toplam:</th>
+                            <th id="pdf-subtotal">0.00 TL</th>
+                        </tr>
+                        <tr>
+                            <th colspan="3" class="text-right">Enerji Fonu (%1) & TRT Payı (%2):</th>
+                            <th id="pdf-funds">0.00 TL</th>
+                        </tr>
+                        <tr>
+                            <th colspan="3" class="text-right">KDV (%20):</th>
+                            <th id="pdf-kdv">0.00 TL</th>
+                        </tr>
+                        <tr class="total-row">
+                            <th colspan="3" class="text-right">ÖDENECEK TOPLAM TUTAR:</th>
+                            <th id="pdf-grand-total" class="text-neon-orange">0.00 TL</th>
+                        </tr>
+                    </tfoot>
+                </table>
+
+                <div class="invoice-footer-note">
+                    <p>Bu fatura VoltHome IoT Akıllı Enerji Ölçüm Altyapısı tarafından otomatik olarak düzenlenmiştir.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
     <!-- MODAL: ADD NEW HOME -->
+    <!-- =================================================================== -->
     <div id="modal-add-home" class="modal-overlay hidden">
         <div class="modal-content glass-panel animated fade-in">
             <div class="modal-header">
-                <h2><i class="fa-solid fa-house-medical"></i> Yeni Ev Provision Kaydı</h2>
+                <h2><i class="fa-solid fa-house-medical text-neon-blue"></i> Yeni Ev Provision Kaydı</h2>
                 <button class="btn-close-modal" onclick="closeAddHomeModal()">&times;</button>
             </div>
             <div class="modal-body">
@@ -128,9 +774,8 @@
                     </div>
 
                     <div class="appliance-form-section">
-                        <h3><i class="fa-solid fa-plug-circle-bolt"></i> Cihaz Tanımlamaları</h3>
+                        <h3><i class="fa-solid fa-plug-circle-bolt text-neon-blue"></i> Cihaz Tanımlamaları</h3>
                         <div id="appliances-list" class="appliances-form-list">
-                            <!-- Default Appliance Row 1 -->
                             <div class="appliance-row">
                                 <input type="text" class="app-name" placeholder="Cihaz Adı (Örn: Klima)" required>
                                 <select class="app-type">
@@ -147,7 +792,7 @@
                                 </button>
                             </div>
                         </div>
-                        <button type="button" id="btn-add-appliance-row" class="btn btn-secondary btn-sm">
+                        <button type="button" id="btn-add-appliance-row" class="btn btn-secondary btn-sm" onclick="addApplianceRow()">
                             <i class="fa-solid fa-plus"></i> Cihaz Ekle
                         </button>
                     </div>
@@ -161,7 +806,9 @@
         </div>
     </div>
 
+    <!-- =================================================================== -->
     <!-- MODAL: HOME DETAIL & MONITORING -->
+    <!-- =================================================================== -->
     <div id="modal-home-detail" class="modal-overlay hidden">
         <div class="modal-content glass-panel detail-modal-content animated fade-in">
             <div class="modal-header">
@@ -176,7 +823,6 @@
             </div>
             
             <div class="modal-body scrollable-body">
-                <!-- Live Highlights Grid -->
                 <div class="live-highlights">
                     <div class="highlight-box glass-panel text-center">
                         <span class="highlight-label">Tüketilen Toplam Enerji</span>
@@ -192,13 +838,10 @@
                     </div>
                     <div class="highlight-box glass-panel text-center">
                         <span class="highlight-label">Tarife Durumu</span>
-                        <div id="detail-tariff-status" class="tariff-status-wrapper">
-                            <!-- Will be injected: Base Tariff vs Premium Penalty -->
-                        </div>
+                        <div id="detail-tariff-status" class="tariff-status-wrapper"></div>
                     </div>
                 </div>
 
-                <!-- Prediction Bar -->
                 <div id="prediction-bar" class="prediction-bar glass-panel">
                     <div class="prediction-bar-header">
                         <span><i class="fa-solid fa-chart-mixed text-neon-violet"></i> Ay Sonu Tahmini</span>
@@ -232,22 +875,16 @@
                     </div>
                 </div>
 
-                <!-- Main Details Grid Layout (Left: Live appliances, Right: AI + Trends) -->
                 <div class="detail-grid-layout">
-                    <!-- Left Column: IoT Appliance Telemetry -->
                     <div class="detail-left-column">
                         <div class="card-section-title">
-                            <h3><i class="fa-solid fa-wave-square"></i> Cihaz Anlık Güç Tüketimleri</h3>
+                            <h3><i class="fa-solid fa-wave-square text-neon-blue"></i> Cihaz Anlık Güç & Uzaktan Kontrol</h3>
                             <span class="live-pulse"><span class="pulse-dot"></span>Canlı</span>
                         </div>
-                        <div id="detail-appliances-grid" class="appliances-live-grid">
-                            <!-- Live Appliances loaded here -->
-                        </div>
+                        <div id="detail-appliances-grid" class="appliances-live-grid"></div>
                     </div>
 
-                    <!-- Right Column: AI Suggestions, Charts, Automation -->
                     <div class="detail-right-column">
-                        <!-- AI Recommendations Card -->
                         <div class="ai-recommendations-panel glass-panel">
                             <div class="ai-panel-header">
                                 <h3><i class="fa-solid fa-wand-magic-sparkles text-neon-violet"></i> VoltHome AI Tasarruf Asistanı</h3>
@@ -260,54 +897,12 @@
                                     <div class="spinner spinner-violet"></div>
                                     <p>Yapay zeka önerisi hazırlanıyor...</p>
                                 </div>
-                                <div id="ai-content-box" class="ai-text-content">
-                                    <!-- Injected AI suggestion text -->
-                                </div>
+                                <div id="ai-content-box" class="ai-text-content"></div>
                             </div>
                         </div>
 
-                        <!-- Automation Rules Panel -->
-                        <div class="automation-panel glass-panel">
-                            <div class="automation-panel-header">
-                                <h3><i class="fa-solid fa-robot text-neon-blue"></i> IoT Otomasyon Kuralları</h3>
-                                <button class="btn btn-secondary btn-sm" onclick="openAddRuleForm()">
-                                    <i class="fa-solid fa-plus"></i> Kural Ekle
-                                </button>
-                            </div>
-                            <!-- Add Rule Form (hidden by default) -->
-                            <div id="add-rule-form" class="add-rule-form hidden">
-                                <select id="rule-device-type" class="rule-select">
-                                    <option value="*">Tüm Cihazlar</option>
-                                    <option value="AC">Klima (AC)</option>
-                                    <option value="HEATER">İsıtıcı</option>
-                                    <option value="WASHING_MACHINE">Çamaşır Makinesi</option>
-                                    <option value="REFRIGERATOR">Buzdolabı</option>
-                                    <option value="OTHER">Diğer</option>
-                                </select>
-                                <select id="rule-trigger-type" class="rule-select" onchange="updateRuleTriggerUI()">
-                                    <option value="ANOMALY">Anomali Tespitinde</option>
-                                    <option value="BUDGET_80">Bütçe %80 Aşımında</option>
-                                    <option value="BUDGET_100">Bütçe %100 Aşımında</option>
-                                    <option value="WATTAGE_EXCEED">Watt Limiti Aşımında</option>
-                                </select>
-                                <input type="number" id="rule-trigger-value" class="rule-input hidden" placeholder="Eşlik Değeri (W)" min="0">
-                                <select id="rule-action" class="rule-select">
-                                    <option value="SHUTDOWN">Cihazı Kapat (SHUTDOWN)</option>
-                                    <option value="LOG_ONLY">Yalnızca Kaydet (LOG_ONLY)</option>
-                                </select>
-                                <div class="rule-form-actions">
-                                    <button class="btn btn-primary btn-sm" onclick="submitNewRule()">Kaydet</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="closeAddRuleForm()">İptal</button>
-                                </div>
-                            </div>
-                            <div id="automation-rules-list" class="automation-rules-list">
-                                <!-- Rules injected here -->
-                            </div>
-                        </div>
-
-                        <!-- Historical Chart Panel -->
                         <div class="chart-panel glass-panel">
-                            <h3><i class="fa-solid fa-chart-line"></i> Tüketim Geçmiş Trendi (PostgreSQL)</h3>
+                            <h3><i class="fa-solid fa-chart-line text-neon-green"></i> Tüketim Geçmiş Trendi (PostgreSQL)</h3>
                             <div class="chart-container">
                                 <canvas id="chart-consumption-trends"></canvas>
                             </div>
@@ -318,7 +913,9 @@
         </div>
     </div>
 
+    <!-- =================================================================== -->
     <!-- MODAL: LOGIN / REGISTER OVERLAY -->
+    <!-- =================================================================== -->
     <div id="modal-auth" class="modal-overlay auth-overlay">
         <div class="modal-content auth-content glass-panel animated fade-in">
             <div class="auth-tabs">
@@ -326,7 +923,6 @@
                 <button id="tab-register" class="auth-tab" onclick="switchAuthTab('register')">Kayıt Ol</button>
             </div>
             
-            <!-- Login Form -->
             <form id="form-login" class="auth-form">
                 <div class="form-group">
                     <label for="login-username">Kullanıcı Adı</label>
@@ -339,7 +935,6 @@
                 <button type="submit" class="btn btn-primary btn-block">Giriş Yap <i class="fa-solid fa-right-to-bracket"></i></button>
             </form>
             
-            <!-- Register Form -->
             <form id="form-register" class="auth-form hidden">
                 <div class="form-group">
                     <label for="register-username">Kullanıcı Adı</label>
@@ -358,10 +953,11 @@
         </div>
     </div>
 
-    <!-- Notification Toast -->
+    <!-- Notification Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
-    <!-- Custom JS -->
+    <!-- Custom 3D & SPA JS Engines -->
+    <script src="three-smart-home.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

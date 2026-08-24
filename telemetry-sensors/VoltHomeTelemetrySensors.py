@@ -101,15 +101,25 @@ def commands_listener():
             command = command_data.get("command")
             reason = command_data.get("reason", "No reason provided")
             
-            if command == "SHUTDOWN":
-                with lock:
-                    if home_id in registered_homes:
-                        home_info = registered_homes[home_id]
-                        appliances = home_info["appliances"]
-                        for app in appliances:
-                            if int(app.get("id")) == appliance_id:
+            with lock:
+                if home_id in registered_homes:
+                    home_info = registered_homes[home_id]
+                    appliances = home_info["appliances"]
+                    for app in appliances:
+                        if int(app.get("id")) == appliance_id:
+                            if command in ["SHUTDOWN", "TURN_OFF"]:
                                 app["turned_off"] = True
-                                print(f"\n[COMMAND RECEIVED] Shut down Appliance {app.get('name')} (ID: {appliance_id}) in Home {home_info['name']} due to: {reason}")
+                                print(f"\n[COMMAND RECEIVED] Shut down Appliance {app.get('name')} (ID: {appliance_id}) in Home {home_info['name']}. Reason: {reason}")
+                            elif command == "TURN_ON":
+                                app["turned_off"] = False
+                                home_info["anomaly_cycles"][appliance_id] = 0
+                                print(f"\n[COMMAND RECEIVED] Turned ON Appliance {app.get('name')} (ID: {appliance_id}) in Home {home_info['name']}.")
+                            elif command == "TOGGLE":
+                                app["turned_off"] = not app.get("turned_off", False)
+                                if not app["turned_off"]:
+                                    home_info["anomaly_cycles"][appliance_id] = 0
+                                state_str = "OFF" if app["turned_off"] else "ON"
+                                print(f"\n[COMMAND RECEIVED] Toggled Appliance {app.get('name')} (ID: {appliance_id}) to {state_str} in Home {home_info['name']}.")
     except Exception as e:
         print(f"Error in Kafka commands listener: {e}")
 

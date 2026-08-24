@@ -51,6 +51,7 @@ public class AuthController {
 
             Map<String, Object> response = new HashMap<>();
             response.put("accessToken", jwt);
+            response.put("token", jwt);
             response.put("tokenType", "Bearer");
             response.put("username", loginRequest.getUsername());
 
@@ -85,9 +86,29 @@ public class AuthController {
 
         userRepository.save(user);
 
-        Map<String, String> response = new HashMap<>();
-        response.put("message", "Kullanıcı başarıyla kaydedildi.");
-        return ResponseEntity.ok(response);
+        try {
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            registerRequest.getUsername(),
+                            registerRequest.getPassword()
+                    )
+            );
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            String jwt = tokenProvider.generateToken(authentication);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("accessToken", jwt);
+            response.put("token", jwt);
+            response.put("tokenType", "Bearer");
+            response.put("username", user.getUsername());
+            response.put("email", user.getEmail());
+            response.put("message", "Kullanıcı başarıyla kaydedildi.");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Kullanıcı kaydedildi, lütfen giriş yapın.");
+            return ResponseEntity.ok(response);
+        }
     }
 
     // Inner classes for DTOs

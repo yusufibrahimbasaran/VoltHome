@@ -1,554 +1,929 @@
-// VoltHome Client-Side SPA Engine
-const API_BASE = "http://localhost:8080/api/homes";
-const AUTH_BASE = "http://localhost:8080/api/auth";
+// VoltHome Client-Side SPA Engine & IoT Management Platform
+const API_BASE = "/api/homes";
+const AUTH_BASE = "/api/auth";
 let homesList = [];
 let activeHomeId = null;
 let chartInstance = null;
-let socket = null;
+let analyticsChartInstance = null;
+let pieChartInstance = null;
+let wsClient = null;
+let notificationsList = [];
 
-// Auth state
-let authToken = localStorage.getItem("voltHomeToken");
-let authUser = localStorage.getItem("voltHomeUser");
+// ─── AUTHENTICATION HELPERS ───────────────────────────────────────────────────
 
-// Track previously seen warnings to prevent spamming notifications on client side
-const triggeredClientAlerts = {
-    warning80: {},
-    warning100: {},
-    anomalies: {}
-};
-
-document.addEventListener("DOMContentLoaded", () => {
-    // Check if authenticated on load
-    checkAuthentication();
-
-    // Event Bindings
-    document.getElementById("btn-open-add-home").addEventListener("click", openAddHomeModal);
-    document.getElementById("btn-add-appliance-row").addEventListener("click", addApplianceRow);
-    document.getElementById("form-add-home").addEventListener("submit", handleAddHomeSubmit);
-    
-    // Auth Forms Bindings
-    document.getElementById("form-login").addEventListener("submit", handleLoginSubmit);
-    document.getElementById("form-register").addEventListener("submit", handleRegisterSubmit);
-});
-
-// Helper for authenticated headers
-function getHeaders() {
-    return {
-        "Content-Type": "application/json",
-        "Authorization": authToken ? `Bearer ${authToken}` : ""
-    };
+function getToken() {
+    const token = localStorage.getItem("volthome_token");
+    if (!token || token === "undefined" || token === "null") {
+        return null;
+    }
+    return token;
 }
 
-// Switch between login and register tabs
+function setToken(token) {
+    localStorage.setItem("volthome_token", token);
+}
+
+function removeToken() {
+    localStorage.removeItem("volthome_token");
+    localStorage.removeItem("volthome_user");
+}
+
+function getStoredUser() {
+    try {
+        return JSON.parse(localStorage.getItem("volthome_user") || "null");
+    } catch (e) {
+        return null;
+    }
+}
+
+async function authFetch(url, options = {}) {
+    const token = getToken();
+    const headers = {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+    };
+    if (token) {
+        headers["Authorization"] = "Bearer " + token;
+    }
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 401 || response.status === 403) {
+        removeToken();
+        showAuthModal("login");
+        throw new Error("Oturum süreniz doldu. Lütfen tekrar giriş yapın.");
+    }
+    return response;
+}
+
+// ─── INITIALIZATION ──────────────────────────────────────────────────────────
+
+document.addEventListener("DOMContentLoaded", () => {
+    initApp();
+});
+
+async function initApp() {
+    setupEventListeners();
+    const token = getToken();
+    if (!token) {
+        removeToken();
+        showAuthModal("login");
+    } else {
+        hideAuthModal();
+        updateUserUI();
+        await loadHomes();
+        initWebSocket();
+        loadNotifications();
+    }
+}
+
+function setupEventListeners() {
+    const formLogin = document.getElementById("form-login");
+    if (formLogin) formLogin.addEventListener("submit", handleLoginSubmit);
+
+    const formRegister = document.getElementById("form-register");
+    if (formRegister) formRegister.addEventListener("submit", handleRegisterSubmit);
+
+    const formAddHome = document.getElementById("form-add-home");
+    if (formAddHome) formAddHome.addEventListener("submit", handleAddHomeSubmit);
+}
+
+// ─── TAB NAVIGATION (SIDEBAR & TOP BAR) ───────────────────────────────────────
+
+window.switchMainTab = function(tabId) {
+    document.querySelectorAll(".sidebar-nav-item").forEach(tab => {
+        if (tab.getAttribute("data-tab") === tabId) {
+            tab.classList.add("active");
+        } else {
+            tab.classList.remove("active");
+        }
+    });
+
+    document.querySelectorAll(".tab-content").forEach(content => {
+        if (content.id === tabId) {
+            content.classList.remove("hidden");
+            content.classList.add("active");
+        } else {
+            content.classList.add("hidden");
+            content.classList.remove("active");
+        }
+    });
+
+    syncHomeSelectDropdowns();
+
+    if (tabId === "tab-3d-sim") {
+        setTimeout(() => {
+            if (window.initThreeSmartHome) window.initThreeSmartHome();
+        }, 100);
+    } else if (tabId === "tab-analytics") {
+        loadAnalyticsData();
+    } else if (tabId === "tab-invoices") {
+        loadInvoiceData();
+    } else if (tabId === "tab-ai-prediction") {
+        loadAiPredictionData();
+    } else if (tabId === "tab-scenarios") {
+        loadScenariosData();
+    }
+};
+
+function syncHomeSelectDropdowns() {
+    const dropdowns = [
+        "analytics-home-select",
+        "invoice-home-select",
+        "ai-home-select",
+        "scenarios-home-select"
+    ];
+
+    dropdowns.forEach(id => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const currentVal = select.value;
+        select.innerHTML = "";
+
+        if (homesList.length === 0) {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "Kayıtlı Ev Yok";
+            select.appendChild(opt);
+        } else {
+            homesList.forEach(home => {
+                const opt = document.createElement("option");
+                opt.value = home.id;
+                opt.textContent = `${home.name} (ID: ${home.id})`;
+                if (currentVal && parseInt(currentVal) === home.id) {
+                    opt.selected = true;
+                }
+                select.appendChild(opt);
+            });
+        }
+    });
+}
+
+function getSelectedHomeId(selectId) {
+    const select = document.getElementById(selectId);
+    if (select && select.value) {
+        return parseInt(select.value);
+    }
+    if (homesList.length > 0) {
+        return homesList[0].id;
+    }
+    return null;
+}
+
+// ─── AUTHENTICATION LOGIC ────────────────────────────────────────────────────
+
+function showAuthModal(tab = "login") {
+    const modal = document.getElementById("modal-auth");
+    if (modal) modal.classList.remove("hidden");
+    switchAuthTab(tab);
+}
+
+function hideAuthModal() {
+    const modal = document.getElementById("modal-auth");
+    if (modal) modal.classList.add("hidden");
+}
+
 window.switchAuthTab = function(tab) {
     const tabLogin = document.getElementById("tab-login");
     const tabRegister = document.getElementById("tab-register");
     const formLogin = document.getElementById("form-login");
     const formRegister = document.getElementById("form-register");
-    
-    if (tab === 'login') {
-        tabLogin.classList.add("active");
-        tabRegister.classList.remove("active");
-        formLogin.classList.remove("hidden");
-        formRegister.classList.add("hidden");
+
+    if (tab === "login") {
+        if (tabLogin) tabLogin.classList.add("active");
+        if (tabRegister) tabRegister.classList.remove("active");
+        if (formLogin) formLogin.classList.remove("hidden");
+        if (formRegister) formRegister.classList.add("hidden");
     } else {
-        tabLogin.classList.remove("active");
-        tabRegister.classList.add("active");
-        formLogin.classList.add("hidden");
-        formRegister.classList.remove("hidden");
+        if (tabRegister) tabRegister.classList.add("active");
+        if (tabLogin) tabLogin.classList.remove("active");
+        if (formRegister) formRegister.classList.remove("hidden");
+        if (formLogin) formLogin.classList.add("hidden");
     }
 };
 
-// Check if token exists, toggle UI overlays
-function checkAuthentication() {
-    if (authToken && authUser) {
-        document.getElementById("modal-auth").classList.add("hidden");
-        document.getElementById("user-info-display").classList.remove("hidden");
-        document.getElementById("display-username").innerHTML = `<i class="fa-solid fa-user text-neon-blue"></i> ${escapeHtml(authUser)}`;
-        
-        // Fetch initial user homes
-        fetchHomes();
-        // Open real-time telemetry stream
-        connectWebSocket();
-    } else {
-        document.getElementById("modal-auth").classList.remove("hidden");
-        document.getElementById("user-info-display").classList.add("hidden");
-        if (socket) {
-            socket.close();
-            socket = null;
-        }
-    }
-}
-
-// Authenticate & get JWT Token
 async function handleLoginSubmit(e) {
     e.preventDefault();
-    const username = document.getElementById("login-username").value;
-    const password = document.getElementById("login-password").value;
-    
+    const usernameInput = document.getElementById("login-username").value.trim();
+    const passwordInput = document.getElementById("login-password").value;
+
     try {
         const res = await fetch(`${AUTH_BASE}/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, password })
+            body: JSON.stringify({ username: usernameInput, password: passwordInput })
         });
-        
-        if (!res.ok) {
-            const errData = await res.json();
-            throw new Error(errData.message || "Giriş başarısız!");
-        }
-        
         const data = await res.json();
-        authToken = data.accessToken;
-        authUser = data.username;
-        
-        localStorage.setItem("voltHomeToken", authToken);
-        localStorage.setItem("voltHomeUser", authUser);
-        
-        showToast("Giriş Başarılı", `Hoş geldiniz, ${authUser}!`, "success");
-        
-        // Reset forms
-        document.getElementById("form-login").reset();
-        
-        checkAuthentication();
+        if (!res.ok) throw new Error(data.message || "Giriş yapılamadı.");
+
+        const token = data.accessToken || data.token;
+        if (!token) throw new Error("Sunucudan yetkilendirme anahtarı alınamadı.");
+
+        setToken(token);
+        localStorage.setItem("volthome_user", JSON.stringify({ username: data.username, email: data.email || "" }));
+        hideAuthModal();
+        updateUserUI();
+        showToast("Başarılı", `Hoş geldiniz, ${data.username}!`, "success");
+        await loadHomes();
+        initWebSocket();
+        loadNotifications();
     } catch (err) {
-        showToast("Giriş Başarısız", err.message, "danger");
+        showToast("Hata", err.message, "danger");
     }
 }
 
-// Register user account
 async function handleRegisterSubmit(e) {
     e.preventDefault();
-    const username = document.getElementById("register-username").value;
-    const email = document.getElementById("register-email").value;
+    const username = document.getElementById("register-username").value.trim();
+    const email = document.getElementById("register-email").value.trim();
     const password = document.getElementById("register-password").value;
-    
+
     try {
         const res = await fetch(`${AUTH_BASE}/register`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ username, email, password })
         });
-        
-        if (!res.ok) {
-            const errData = await res.json();
-            throw new Error(errData.message || "Kayıt başarısız!");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Kayıt oluşturulamadı.");
+
+        const token = data.accessToken || data.token;
+        if (token) {
+            setToken(token);
+            localStorage.setItem("volthome_user", JSON.stringify({ username: data.username, email: data.email || email }));
+            hideAuthModal();
+            updateUserUI();
+            showToast("Tebrikler!", "Hesabınız başarıyla oluşturuldu ve giriş yapıldı.", "success");
+            await loadHomes();
+            initWebSocket();
+            loadNotifications();
+        } else {
+            showToast("Kayıt Başarılı", "Lütfen oluşturduğunuz hesapla giriş yapın.", "success");
+            switchAuthTab("login");
         }
-        
-        showToast("Kayıt Başarılı", "Hesabınız oluşturuldu. Giriş yapabilirsiniz.", "success");
-        document.getElementById("form-register").reset();
-        switchAuthTab('login');
     } catch (err) {
-        showToast("Kayıt Başarısız", err.message, "danger");
+        showToast("Kayıt Hatası", err.message, "danger");
     }
 }
 
-// Log out user
 window.handleLogout = function() {
-    authToken = null;
-    authUser = null;
-    localStorage.removeItem("voltHomeToken");
-    localStorage.removeItem("voltHomeUser");
-    
-    showToast("Oturum Kapatıldı", "Güvenli çıkış yapıldı.", "info");
-    
-    // Close modal details if open
-    closeHomeDetailModal();
-    closeAddHomeModal();
-    
-    // Clear screen
+    removeToken();
+    if (wsClient) wsClient.close();
+    showAuthModal("login");
+    document.getElementById("homes-grid").innerHTML = "";
     homesList = [];
-    renderHomesGrid();
-    calculateGlobalStats();
-    
-    checkAuthentication();
+    showToast("Çıkış Yapıldı", "Oturumunuz başarıyla kapatıldı.", "warning");
 };
 
-// Connect WebSocket to backend stream
-function connectWebSocket() {
-    if (!authToken) return;
-    const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
-    // Fallback to localhost:8080 if running page from file system
-    const host = window.location.host || "localhost:8080";
-    const socketUrl = `${protocol}${host}/ws/telemetry?token=${authToken}`;
-    
-    console.log(`Connecting WebSocket to: ${socketUrl}`);
-    socket = new WebSocket(socketUrl);
-
-    socket.onopen = () => {
-        console.log("WebSocket connected to VoltHome telemetry stream.");
-    };
-
-    socket.onmessage = (event) => {
-        try {
-            const liveState = JSON.parse(event.data);
-            
-            // Map dynamic Ignite model properties to matching REST API objects
-            const homeId = liveState.homeId;
-            const index = homesList.findIndex(h => h.id === homeId);
-            
-            const updatedHome = {
-                id: homeId,
-                name: liveState.name,
-                contactEmail: liveState.contactEmail,
-                budgetQuota: liveState.budgetQuota,
-                currentBalance: liveState.cumulativeCost,
-                cumulativeEnergyKwh: liveState.cumulativeEnergyKwh,
-                isPenaltyTariff: liveState.isPenaltyTariff,
-                tariffRate: liveState.tariffRate,
-                appliances: Object.values(liveState.appliances)
-            };
-
-            if (index !== -1) {
-                homesList[index] = updatedHome;
-            } else {
-                homesList.push(updatedHome);
-            }
-
-            // Refresh UI grids dynamically with Zero Polling Overhead!
-            renderHomesGrid();
-            calculateGlobalStats();
-
-            // If details modal is open for this specific home, update it in real time
-            if (activeHomeId === homeId) {
-                updateHomeDetailsFromData(liveState);
-            }
-        } catch (err) {
-            console.error("Error processing streaming WebSocket message:", err);
-        }
-    };
-
-    socket.onclose = () => {
-        console.warn("WebSocket closed. Attempting reconnect in 3 seconds...");
-        setTimeout(connectWebSocket, 3000);
-    };
-
-    socket.onerror = (err) => {
-        console.error("WebSocket error:", err);
-    };
-}
-
-// Fetch all registered homes from PostgreSQL
-async function fetchHomes() {
-    try {
-        const res = await fetch(API_BASE, { headers: getHeaders() });
-        if (res.status === 401 || res.status === 403) {
-            handleLogout();
-            return;
-        }
-        if (!res.ok) throw new Error("Ev listesi alınamadı");
-        
-        homesList = await res.json();
-        
-        document.getElementById("homes-loading").classList.add("hidden");
-        
-        if (homesList.length === 0) {
-            document.getElementById("homes-empty").classList.remove("hidden");
-            document.getElementById("homes-grid").classList.add("hidden");
-            updateDashboardStats(0, 0, 0);
-        } else {
-            document.getElementById("homes-empty").classList.add("hidden");
-            document.getElementById("homes-grid").classList.remove("hidden");
-            renderHomesGrid();
-            calculateGlobalStats();
-        }
-    } catch (err) {
-        console.error("Dashboard fetch error:", err);
-        showToast("Sunucu Bağlantı Hatası", "Backend API sunucusuna bağlanılamadı. Lütfen VoltHome Core servisinin çalıştığından emin olun.", "danger");
+function updateUserUI() {
+    const user = getStoredUser();
+    if (user) {
+        const sidebarUserEl = document.getElementById("sidebar-username");
+        if (sidebarUserEl) sidebarUserEl.textContent = user.username;
     }
 }
 
-// Render Homes Grid on Main Panel
-function renderHomesGrid() {
-    const grid = document.getElementById("homes-grid");
-    grid.innerHTML = "";
-    
+// ─── WEBSOCKET REAL-TIME TELEMETRY ───────────────────────────────────────────
+
+function initWebSocket() {
+    const token = getToken();
+    if (!token) return;
+
+    if (wsClient && wsClient.readyState === WebSocket.OPEN) {
+        return;
+    }
+
+    const loc = window.location;
+    const wsProto = loc.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${wsProto}//${loc.host}/ws/telemetry?token=${token}`;
+
+    try {
+        wsClient = new WebSocket(wsUrl);
+
+        wsClient.onopen = () => {
+            console.log("WebSocket connected to VoltHome live telemetry stream.");
+        };
+
+        wsClient.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                if (message.type === "TELEMETRY_UPDATE") {
+                    handleLiveTelemetryMessage(message.homeId, message.data);
+                }
+            } catch (e) {
+                console.error("Error parsing WS message:", e);
+            }
+        };
+
+        wsClient.onclose = () => {
+            console.log("WebSocket closed. Attempting reconnect in 4s...");
+            setTimeout(initWebSocket, 4000);
+        };
+
+        wsClient.onerror = (err) => {
+            console.error("WebSocket error:", err);
+            wsClient.close();
+        };
+    } catch (e) {
+        console.error("Could not create WebSocket connection:", e);
+    }
+}
+
+function handleLiveTelemetryMessage(homeId, liveState) {
+    if (!liveState) return;
+
+    const home = homesList.find(h => h.id === homeId);
+    if (home) {
+        home.cumulativeEnergyKwh = liveState.cumulativeEnergyKwh;
+        home.currentBalance = liveState.cumulativeCost;
+    }
+
+    updateGlobalDashboardStats();
+    updateStickyTopBar();
+
+    if (activeHomeId === homeId) {
+        renderLiveModalState(liveState);
+    }
+}
+
+// ─── TOP METRICS & STATS ──────────────────────────────────────────────────────
+
+function updateStickyTopBar() {
+    let totalCost = 0;
+    let tariffLabel = "Gündüz (3.85 TL/kWh)";
+
+    const hour = new Date().getHours();
+    if (hour >= 22 || hour < 6) {
+        tariffLabel = "Gece (2.10 TL/kWh)";
+    }
+
     homesList.forEach(home => {
-        const quota = home.budgetQuota;
-        const balance = home.currentBalance || 0;
-        const ratio = quota > 0 ? (balance / quota) * 100 : 0;
-        
-        let statusClass = "";
-        let badgeClass = "badge-blue";
-        let badgeText = "Normal";
-        let progressClass = "blue";
-        
-        if (balance >= quota) {
-            statusClass = "status-danger";
-            badgeClass = "badge-red";
-            badgeText = "100% Aşım / Cezalı";
+        if (home.currentBalance) totalCost += home.currentBalance;
+    });
+
+    const topPowerEl = document.getElementById("top-live-power");
+    const topTariffEl = document.getElementById("top-active-tariff");
+    const topCostEl = document.getElementById("top-live-cost");
+
+    if (topPowerEl) {
+        const estimatedKw = (Math.max(1.2, homesList.length * 1.45)).toFixed(2);
+        topPowerEl.textContent = `${estimatedKw} kW`;
+    }
+    if (topTariffEl) topTariffEl.textContent = tariffLabel;
+    if (topCostEl) topCostEl.textContent = `${totalCost.toFixed(2)} TL`;
+}
+
+function updateGlobalDashboardStats() {
+    const totalHomes = homesList.length;
+    let totalKwh = 0;
+    let totalCost = 0;
+
+    homesList.forEach(home => {
+        totalKwh += (home.cumulativeEnergyKwh || 0);
+        totalCost += (home.currentBalance || 0);
+    });
+
+    const statHomesEl = document.getElementById("stat-total-homes");
+    const statEnergyEl = document.getElementById("stat-total-energy");
+    const statCostEl = document.getElementById("stat-total-cost");
+    const co2El = document.getElementById("stat-total-co2");
+
+    if (statHomesEl) statHomesEl.textContent = totalHomes;
+    if (statEnergyEl) statEnergyEl.textContent = `${totalKwh.toFixed(2)} kWh`;
+    if (statCostEl) statCostEl.textContent = `${totalCost.toFixed(2)} TL`;
+
+    if (co2El) {
+        const totalCo2 = (totalKwh * 0.42).toFixed(1);
+        co2El.textContent = `${totalCo2} kg`;
+    }
+}
+
+// ─── HOMES DATA FETCHING & RENDERING ──────────────────────────────────────────
+
+async function loadHomes() {
+    const loadingEl = document.getElementById("homes-loading");
+    const emptyEl = document.getElementById("homes-empty");
+    const gridEl = document.getElementById("homes-grid");
+
+    try {
+        if (loadingEl) loadingEl.classList.remove("hidden");
+        const res = await authFetch(API_BASE);
+        homesList = await res.json();
+        if (loadingEl) loadingEl.classList.add("hidden");
+
+        if (homesList.length === 0) {
+            if (emptyEl) emptyEl.classList.remove("hidden");
+            if (gridEl) gridEl.classList.add("hidden");
+        } else {
+            if (emptyEl) emptyEl.classList.add("hidden");
+            if (gridEl) {
+                gridEl.classList.remove("hidden");
+                renderHomesGrid();
+            }
+        }
+
+        updateGlobalDashboardStats();
+        updateStickyTopBar();
+        syncHomeSelectDropdowns();
+    } catch (err) {
+        if (loadingEl) loadingEl.classList.add("hidden");
+        showToast("Hata", "Ev listesi yüklenemedi: " + err.message, "danger");
+    }
+}
+
+function renderHomesGrid() {
+    const gridEl = document.getElementById("homes-grid");
+    if (!gridEl) return;
+    gridEl.innerHTML = "";
+
+    homesList.forEach(home => {
+        const spent = home.currentBalance || 0;
+        const quota = home.budgetQuota || 1000;
+        const pct = Math.min(100, Math.round((spent / quota) * 100));
+
+        let progressClass = "green";
+        let badgeClass = "badge-green";
+        let statusText = "NORMAL";
+
+        if (pct >= 100) {
             progressClass = "red";
-            
-            // Client side alert check
-            triggerClientWarningToast(home.id, home.name, "100% Bütçe Aşımı", "Ev kotayı aşarak premium cezalı tarifeye geçti!", "danger", "warning100");
-        } else if (balance >= quota * 0.8) {
-            statusClass = "status-warning";
-            badgeClass = "badge-orange";
-            badgeText = "80% Limit Aşımı";
+            badgeClass = "badge-red";
+            statusText = "LİMİT AŞIMI";
+        } else if (pct >= 80) {
             progressClass = "orange";
-            
-            triggerClientWarningToast(home.id, home.name, "80% Bütçe Sınırı", "Ev bütçe limitinin %80'ine ulaştı. Tasarruf önerilerini kontrol edin.", "warning", "warning80");
+            badgeClass = "badge-orange";
+            statusText = "UYARI %80+";
         }
 
         const card = document.createElement("div");
-        card.className = `home-card glass-panel ${statusClass}`;
-        card.setAttribute("onclick", `openHomeDetailModal(${home.id})`);
-        
+        card.className = "home-card glass-panel";
+        card.onclick = () => openHomeDetailModal(home.id);
+
         card.innerHTML = `
             <div class="home-card-header">
-                <div class="home-title-block">
+                <div class="home-title">
                     <h3>${escapeHtml(home.name)}</h3>
-                    <span><i class="fa-regular fa-envelope"></i> ${escapeHtml(home.contactEmail)}</span>
+                    <span>${escapeHtml(home.contactEmail)}</span>
                 </div>
-                <span class="badge ${badgeClass}">${badgeText}</span>
+                <span class="badge ${badgeClass}">${statusText}</span>
             </div>
-            
-            <div class="home-card-budget">
-                <div class="budget-info">
-                    <span>Mevcut Fatura</span>
-                    <span class="budget-ratio">${ratio.toFixed(1)}%</span>
+
+            <div class="budget-progress-container">
+                <div class="budget-labels">
+                    <span>Bütçe Kullanımı: <strong>%${pct}</strong></span>
+                    <span>${spent.toFixed(2)} / ${quota.toFixed(0)} TL</span>
                 </div>
                 <div class="progress-track">
-                    <div class="progress-fill ${progressClass}" style="width: ${Math.min(ratio, 100)}%"></div>
-                </div>
-                <div class="budget-info" style="margin-top: 4px; font-size: 11px; color: var(--text-muted);">
-                    <span>${balance.toFixed(2)} TL</span>
-                    <span>Kota: ${quota} TL</span>
+                    <div class="progress-fill ${progressClass}" style="width: ${pct}%"></div>
                 </div>
             </div>
-            
+
             <div class="home-card-metrics">
-                <div class="mini-metric">
+                <div class="metric-item">
+                    <span>Toplam Tüketim</span>
+                    <strong class="text-neon-green">${(home.cumulativeEnergyKwh || 0).toFixed(2)} kWh</strong>
+                </div>
+                <div class="metric-item">
                     <span>Cihaz Sayısı</span>
-                    <strong>${home.appliances ? home.appliances.length : 0}</strong>
-                </div>
-                <div class="mini-metric">
-                    <span>Toplam Enerji</span>
-                    <strong>${(home.cumulativeEnergyKwh || 0).toFixed(3)} kWh</strong>
-                </div>
-                <div class="mini-metric">
-                    <span>Tarife Birim</span>
-                    <strong>${(home.tariffRate || 2.5).toFixed(2)} TL</strong>
+                    <strong class="text-neon-blue">${home.appliances ? home.appliances.length : 0} Adet</strong>
                 </div>
             </div>
         `;
-        
-        grid.appendChild(card);
+        gridEl.appendChild(card);
     });
 }
 
-// Calculate Global Metrics
-function calculateGlobalStats() {
-    let totalHomes = homesList.length;
-    let totalEnergy = 0;
-    let totalCost = 0;
-    
-    homesList.forEach(h => {
-        totalEnergy += (h.cumulativeEnergyKwh || 0);
-        totalCost += (h.currentBalance || 0);
-    });
-    
-    updateDashboardStats(totalHomes, totalEnergy, totalCost);
-}
+// ─── REMOTE SWITCH CONTROL ───────────────────────────────────────────────────
 
-function updateDashboardStats(total, energy, cost) {
-    document.getElementById("stat-total-homes").textContent = total;
-    document.getElementById("stat-total-energy").textContent = `${energy.toFixed(2)} kWh`;
-    document.getElementById("stat-total-cost").textContent = `${cost.toFixed(2)} TL`;
-}
+window.toggleDeviceSwitch = async function(homeId, applianceId, currentTurnedOff, event) {
+    if (event) event.stopPropagation();
+    const action = currentTurnedOff ? "TURN_ON" : "SHUTDOWN";
 
-// Add appliance row in registration form
-function addApplianceRow() {
-    const list = document.getElementById("appliances-list");
-    const row = document.createElement("div");
-    row.className = "appliance-row";
-    row.innerHTML = `
-        <input type="text" class="app-name" placeholder="Cihaz Adı (Örn: Çamaşır Makinesi)" required>
-        <select class="app-type">
-            <option value="WASHING_MACHINE">Çamaşır Makinesi</option>
-            <option value="REFRIGERATOR">Buzdolabı</option>
-            <option value="AC">Klima (AC)</option>
-            <option value="HEATER">Isıtıcı</option>
-            <option value="TELEVISION">Televizyon</option>
-            <option value="OTHER">Diğer</option>
-        </select>
-        <input type="number" class="app-limit" placeholder="Limit (W) Örn: 1500" min="10" required>
-        <button type="button" class="btn-remove-row" onclick="removeApplianceRow(this)">
-            <i class="fa-solid fa-trash-can"></i>
-        </button>
-    `;
-    list.appendChild(row);
-}
-
-function removeApplianceRow(button) {
-    const row = button.closest(".appliance-row");
-    const list = document.getElementById("appliances-list");
-    if (list.children.length > 1) {
-        row.remove();
-    } else {
-        showToast("Uyarı", "Ev kaydetmek için en az 1 adet cihaz eklemelisiniz.", "warning");
-    }
-}
-
-// Handle Add Home Submit
-async function handleAddHomeSubmit(e) {
-    e.preventDefault();
-    
-    const name = document.getElementById("home-name").value;
-    const contactEmail = document.getElementById("home-email").value;
-    const budgetQuota = parseFloat(document.getElementById("home-quota").value);
-    
-    const applianceRows = document.querySelectorAll("#appliances-list .appliance-row");
-    const appliances = [];
-    
-    applianceRows.forEach(row => {
-        appliances.push({
-            name: row.querySelector(".app-name").value,
-            type: row.querySelector(".app-type").value,
-            safeLimitWatt: parseFloat(row.querySelector(".app-limit").value)
-        });
-    });
-    
-    const payload = { name, contactEmail, budgetQuota, appliances };
-    
     try {
-        const res = await fetch(API_BASE, {
+        const res = await authFetch(`${API_BASE}/${homeId}/appliances/${applianceId}/toggle`, {
             method: "POST",
-            headers: getHeaders(),
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ action })
         });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Komut gönderilemedi.");
+
+        showToast("Cihaz Anahtarı", `Cihaz ${action === "TURN_ON" ? "açıldı" : "kapatıldı"}. (Kafka komutu iletildi)`, "success");
         
-        if (res.status === 401 || res.status === 403) {
-            handleLogout();
-            return;
+        if (activeHomeId === homeId) {
+            updateHomeDetails();
         }
-        if (!res.ok) throw new Error("Ev kaydedilirken bir hata oluştu");
-        
-        showToast("Başarılı", "Ev kaydı başarıyla oluşturuldu ve telemetri başlatıldı.", "success");
-        closeAddHomeModal();
-        fetchHomes();
     } catch (err) {
-        showToast("İşlem Başarısız", err.message, "danger");
+        showToast("Anahtar Hatası", err.message, "danger");
     }
-}
+};
 
-// Modal open/close actions
-function openAddHomeModal() {
-    document.getElementById("modal-add-home").classList.remove("hidden");
-    // Clear form
-    document.getElementById("form-add-home").reset();
-    const list = document.getElementById("appliances-list");
-    list.innerHTML = "";
-    // Re-add default appliance row
-    addApplianceRow();
-}
+// ─── HOME DETAIL & MONITORING MODAL ──────────────────────────────────────────
 
-function closeAddHomeModal() {
-    document.getElementById("modal-add-home").classList.add("hidden");
-}
-
-// Open Home Detail & Monitoring Modal
-async function openHomeDetailModal(id) {
+window.openHomeDetailModal = async function(id) {
     activeHomeId = id;
-    document.getElementById("modal-home-detail").classList.remove("hidden");
-    
-    // Clear previous AI content and show loader
-    document.getElementById("ai-content-box").textContent = "";
-    document.getElementById("ai-loading").classList.remove("hidden");
-    
-    // One-off load for AI recommendations, chart data, and initial state
+    const modal = document.getElementById("modal-home-detail");
+    modal.classList.remove("hidden");
+
+    const home = homesList.find(h => h.id === id);
+    if (home) {
+        document.getElementById("detail-home-name").textContent = home.name;
+        document.getElementById("detail-home-email").textContent = home.contactEmail;
+        document.getElementById("detail-quota-badge").textContent = `Bütçe Kotası: ${home.budgetQuota} TL`;
+    }
+
     await updateHomeDetails();
     await fetchAndDrawTrendChart(id);
     await fetchPrediction(id);
-    await fetchAutomationRules(id);
+};
+
+window.closeHomeDetailModal = function() {
+    document.getElementById("modal-home-detail").classList.add("hidden");
+    activeHomeId = null;
+};
+
+async function updateHomeDetails() {
+    if (!activeHomeId) return;
+    try {
+        const res = await authFetch(`${API_BASE}/${activeHomeId}/status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        renderLiveModalState(data.liveState, data.latestAIRecommendation);
+    } catch (e) {
+        console.error("Error updating home details:", e);
+    }
 }
 
-// Fetch month-end prediction
-async function fetchPrediction(homeId) {
+function renderLiveModalState(liveState, aiText) {
+    if (!liveState) return;
+
+    document.getElementById("detail-cumulative-energy").textContent = `${(liveState.cumulativeEnergyKwh || 0).toFixed(2)} kWh`;
+    document.getElementById("detail-cumulative-cost").textContent = `${(liveState.cumulativeCost || 0).toFixed(2)} TL`;
+    document.getElementById("detail-tariff-rate").textContent = `${(liveState.tariffRate || 3.85).toFixed(2)} TL/kWh`;
+
+    const tariffStatusEl = document.getElementById("detail-tariff-status");
+    if (liveState.isPenaltyTariff) {
+        tariffStatusEl.innerHTML = `<span class="badge badge-red"><i class="fa-solid fa-triangle-exclamation"></i> CEZALI TARİFE (%50)</span>`;
+    } else {
+        tariffStatusEl.innerHTML = `<span class="badge badge-green"><i class="fa-solid fa-shield-check"></i> STANDART EPDK</span>`;
+    }
+
+    if (aiText && document.getElementById("ai-content-box")) {
+        document.getElementById("ai-content-box").textContent = aiText;
+    }
+
+    const appGrid = document.getElementById("detail-appliances-grid");
+    appGrid.innerHTML = "";
+
+    const appliances = liveState.appliances || {};
+    const appKeys = Object.keys(appliances);
+
+    if (appKeys.length === 0) {
+        appGrid.innerHTML = `<p class="text-muted">Bu eve ait canlı cihaz telemetrisi bekleniyor...</p>`;
+    } else {
+        appKeys.forEach(key => {
+            const app = appliances[key];
+            const isBreach = app.consecutiveBreaches >= 3;
+            const isTurnedOff = app.turnedOff || app.currentWattage === 0;
+
+            let cardBorder = "";
+            let statusBadge = `<span class="badge badge-green">ÇALIŞIYOR</span>`;
+
+            if (isTurnedOff) {
+                statusBadge = `<span class="badge badge-blue">KAPALI / STANDBY</span>`;
+            } else if (isBreach) {
+                cardBorder = "border-color: var(--neon-red);";
+                statusBadge = `<span class="badge badge-red">ANOMALİ (${app.consecutiveBreaches})</span>`;
+            }
+
+            const card = document.createElement("div");
+            card.className = "appliance-live-card glass-panel";
+            if (cardBorder) card.style = cardBorder;
+
+            card.innerHTML = `
+                <div class="appliance-card-top">
+                    <div class="app-identity">
+                        <div class="app-icon"><i class="fa-solid fa-plug"></i></div>
+                        <div>
+                            <strong>${escapeHtml(app.applianceName || 'Cihaz')}</strong>
+                            <div style="font-size: 11px; color: var(--text-muted);">Safe Limit: ${app.safeLimitWatt}W</div>
+                        </div>
+                    </div>
+                    ${statusBadge}
+                </div>
+
+                <div class="app-power-display">
+                    <span>Anlık Güç:</span>
+                    <strong class="app-power-val ${isBreach ? 'text-neon-red' : 'text-neon-green'}">${(app.currentWattage || 0).toFixed(1)} W</strong>
+                </div>
+
+                <button class="btn-device-switch ${isTurnedOff ? 'off' : 'on'}" 
+                        onclick="toggleDeviceSwitch(${activeHomeId}, ${app.applianceId}, ${isTurnedOff}, event)">
+                    <i class="fa-solid fa-power-off"></i> ${isTurnedOff ? 'Cihazı Aç (ON)' : 'Cihazı Kapat (OFF)'}
+                </button>
+            `;
+            appGrid.appendChild(card);
+        });
+    }
+}
+
+// ─── TAB 3: ANALYTICS & CHARTS ───────────────────────────────────────────────
+
+window.loadAnalyticsData = async function() {
+    const homeId = getSelectedHomeId("analytics-home-select");
+    if (!homeId) return;
+
     try {
-        const res = await fetch(`/api/homes/${homeId}/prediction`, { headers: getHeaders() });
+        const res = await authFetch(`${API_BASE}/${homeId}/trends`);
+        if (!res.ok) return;
+        const history = await res.json();
+
+        // Line Chart
+        const labels = history.map(h => {
+            const d = new Date(h.recordedAt);
+            return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+        });
+        const energyData = history.map(h => h.cumulativeEnergyKwh);
+        const costData = history.map(h => h.cumulativeCost);
+
+        const ctx = document.getElementById("chart-analytics-trends").getContext("2d");
+        if (analyticsChartInstance) analyticsChartInstance.destroy();
+
+        analyticsChartInstance = new Chart(ctx, {
+            type: "line",
+            data: {
+                labels: labels.length ? labels : ["00:00", "04:00", "08:00", "12:00", "16:00", "20:00"],
+                datasets: [
+                    {
+                        label: "Kümülatif Tüketim (kWh)",
+                        data: energyData.length ? energyData : [0.5, 1.2, 2.4, 3.8, 5.2, 6.7],
+                        borderColor: "hsl(145, 100%, 50%)",
+                        backgroundColor: "hsla(145, 100%, 50%, 0.1)",
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: "Kümülatif Tutar (TL)",
+                        data: costData.length ? costData : [1.9, 4.6, 9.2, 14.6, 20.0, 25.8],
+                        borderColor: "hsl(35, 100%, 50%)",
+                        backgroundColor: "hsla(35, 100%, 50%, 0.1)",
+                        fill: true,
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: "#f0f0f8" } } },
+                scales: {
+                    x: { ticks: { color: "#8e8e9f" }, grid: { color: "rgba(255, 255, 255, 0.05)" } },
+                    y: { ticks: { color: "#8e8e9f" }, grid: { color: "rgba(255, 255, 255, 0.05)" } }
+                }
+            }
+        });
+
+        // Pie Chart
+        const pieCtx = document.getElementById("chart-appliance-pie").getContext("2d");
+        if (pieChartInstance) pieChartInstance.destroy();
+
+        pieChartInstance = new Chart(pieCtx, {
+            type: "doughnut",
+            data: {
+                labels: ["Klima (AC)", "Buzdolabı", "Çamaşır Mak.", "Isıtıcı", "Diğer"],
+                datasets: [{
+                    data: [42, 24, 18, 11, 5],
+                    backgroundColor: [
+                        "hsl(185, 100%, 50%)",
+                        "hsl(145, 100%, 50%)",
+                        "hsl(35, 100%, 50%)",
+                        "hsl(348, 100%, 55%)",
+                        "hsl(272, 100%, 65%)"
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: "bottom", labels: { color: "#f0f0f8" } } }
+            }
+        });
+    } catch (err) {
+        console.error("Analytics load error:", err);
+    }
+};
+
+// ─── TAB 4: INVOICES & STATEMENTS ───────────────────────────────────────────
+
+let currentInvoiceData = null;
+
+window.loadInvoiceData = async function() {
+    const homeId = getSelectedHomeId("invoice-home-select");
+    if (!homeId) return;
+
+    try {
+        const res = await authFetch(`${API_BASE}/${homeId}/invoices`);
+        if (!res.ok) return;
+        currentInvoiceData = await res.json();
+
+        const currentBill = currentInvoiceData.currentBill;
+        document.getElementById("inv-current-period").textContent = currentBill.period;
+        document.getElementById("inv-current-total").textContent = `${currentBill.totalAmount.toFixed(2)} TL`;
+        document.getElementById("inv-current-due").textContent = currentBill.dueDate;
+        document.getElementById("inv-current-kwh").textContent = `${currentBill.totalKwh.toFixed(2)} kWh`;
+        document.getElementById("inv-current-day").textContent = `${currentBill.dayKwh.toFixed(2)} kWh`;
+        document.getElementById("inv-current-night").textContent = `${currentBill.nightKwh.toFixed(2)} kWh`;
+        document.getElementById("inv-current-dist").textContent = `${currentBill.distributionCost.toFixed(2)} TL`;
+        document.getElementById("inv-current-tax").textContent = `${(currentBill.energyFund + currentBill.trtTax).toFixed(2)} TL`;
+        document.getElementById("inv-current-kdv").textContent = `${currentBill.kdv.toFixed(2)} TL`;
+
+        const tbody = document.getElementById("past-invoices-tbody");
+        tbody.innerHTML = "";
+
+        currentInvoiceData.archivedBills.forEach(inv => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td><strong>${inv.invoiceNo}</strong></td>
+                <td>${inv.period}</td>
+                <td>${inv.totalKwh} kWh</td>
+                <td class="text-neon-orange">${inv.totalAmount.toFixed(2)} TL</td>
+                <td><span class="badge badge-green">${inv.status}</span></td>
+                <td>
+                    <button class="btn btn-secondary btn-sm" onclick="openPrintInvoiceModal()">
+                        <i class="fa-solid fa-eye"></i> İncele
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (err) {
+        console.error("Invoice load error:", err);
+    }
+};
+
+window.openPrintInvoiceModal = function() {
+    if (!currentInvoiceData) return;
+    const modal = document.getElementById("modal-invoice-detail");
+    modal.classList.remove("hidden");
+
+    const bill = currentInvoiceData.currentBill;
+    document.getElementById("pdf-invoice-no").textContent = bill.invoiceNo;
+    document.getElementById("pdf-due-date").textContent = bill.dueDate;
+    document.getElementById("pdf-subscriber-name").textContent = currentInvoiceData.customerName;
+    document.getElementById("pdf-subscriber-email").textContent = currentInvoiceData.customerEmail;
+
+    const itemsTbody = document.getElementById("pdf-invoice-items");
+    itemsTbody.innerHTML = `
+        <tr>
+            <td>Aktif Enerji Tüketimi (Gündüz T1)</td>
+            <td>${bill.dayKwh.toFixed(2)} kWh</td>
+            <td>3.85 TL/kWh</td>
+            <td>${(bill.dayKwh * 3.85).toFixed(2)} TL</td>
+        </tr>
+        <tr>
+            <td>Aktif Enerji Tüketimi (Gece T2)</td>
+            <td>${bill.nightKwh.toFixed(2)} kWh</td>
+            <td>2.10 TL/kWh</td>
+            <td>${(bill.nightKwh * 2.10).toFixed(2)} TL</td>
+        </tr>
+        <tr>
+            <td>Dağıtım ve İletim Hizmet Bedeli</td>
+            <td>${bill.totalKwh.toFixed(2)} kWh</td>
+            <td>0.85 TL/kWh</td>
+            <td>${bill.distributionCost.toFixed(2)} TL</td>
+        </tr>
+    `;
+
+    document.getElementById("pdf-subtotal").textContent = `${(bill.energyCost + bill.distributionCost).toFixed(2)} TL`;
+    document.getElementById("pdf-funds").textContent = `${(bill.energyFund + bill.trtTax).toFixed(2)} TL`;
+    document.getElementById("pdf-kdv").textContent = `${bill.kdv.toFixed(2)} TL`;
+    document.getElementById("pdf-grand-total").textContent = `${bill.totalAmount.toFixed(2)} TL`;
+};
+
+window.closePrintInvoiceModal = function() {
+    document.getElementById("modal-invoice-detail").classList.add("hidden");
+};
+
+// ─── TAB 5: AI PREDICTION & INSIGHTS ────────────────────────────────────────
+
+window.loadAiPredictionData = async function() {
+    const homeId = getSelectedHomeId("ai-home-select");
+    if (!homeId) return;
+    await fetchPrediction(homeId, true);
+};
+
+window.triggerAiFromTab = async function() {
+    const homeId = getSelectedHomeId("ai-home-select");
+    if (!homeId) return;
+
+    const loadingEl = document.getElementById("tab-ai-loading");
+    const contentEl = document.getElementById("tab-ai-content");
+
+    loadingEl.classList.remove("hidden");
+    contentEl.textContent = "";
+
+    try {
+        const res = await authFetch(`${API_BASE}/${homeId}/ai-recommendation`, { method: "POST" });
+        const data = await res.json();
+        loadingEl.classList.add("hidden");
+        contentEl.textContent = data.recommendationText || "Öneri üretilemedi.";
+        showToast("AI Danışmanı", "Yeni tasarruf reçeteniz Gemini tarafından üretildi!", "success");
+    } catch (err) {
+        loadingEl.classList.add("hidden");
+        showToast("Hata", err.message, "danger");
+    }
+};
+
+async function fetchPrediction(homeId, isTab = false) {
+    try {
+        const res = await authFetch(`${API_BASE}/${homeId}/prediction`);
         if (!res.ok) return;
         const p = await res.json();
-        
-        document.getElementById("pred-kwh").textContent = `${p.predictedKwh} kWh`;
-        document.getElementById("pred-cost").textContent = `${p.predictedCost} TL`;
-        document.getElementById("pred-quota").textContent = `${p.budgetQuota} TL`;
-        document.getElementById("pred-days-remaining").textContent = `${p.daysRemaining} gün`;
-        document.getElementById("pred-tariff-label").textContent = p.currentTariffLabel || "-";
-        document.getElementById("pred-overshoot").textContent = p.overshootPercent > 0 
-            ? `+${p.overshootPercent}% aşım` 
-            : `${p.overshootPercent}% tasarruf`;
-        
-        const badge = document.getElementById("prediction-status-badge");
-        if (p.budgetStatus === "OK") {
-            badge.textContent = "✅ Bütçe Yeterli";
-            badge.className = "badge badge-blue";
-        } else if (p.budgetStatus === "WARNING") {
-            badge.textContent = "⚠️ Yaklaşıyor";
-            badge.className = "badge badge-orange";
-        } else {
-            badge.textContent = "🚨 Bütçe Aşılacak!";
-            badge.className = "badge badge-red";
+
+        const prefix = isTab ? "tab-pred" : "pred";
+        document.getElementById(`${prefix}-kwh`).textContent = `${p.projectedKwh} kWh`;
+        document.getElementById(`${prefix}-cost`).textContent = `${p.projectedCostTl} TL`;
+        document.getElementById(`${prefix}-quota`).textContent = `${p.budgetQuota} TL`;
+        document.getElementById(`${prefix}-days-remaining`).textContent = `${p.daysRemainingInMonth} Gün`;
+        document.getElementById(`${prefix}-tariff-label`).textContent = p.currentTariffLabel;
+        document.getElementById(`${prefix}-overshoot`).textContent = `${p.budgetOvershootPercent > 0 ? '+' : ''}${p.budgetOvershootPercent}%`;
+
+        const badge = document.getElementById(`${prefix}-status-badge`);
+        if (badge) {
+            badge.className = `badge ${p.budgetStatus === 'EXCEEDED' ? 'badge-red' : p.budgetStatus === 'WARNING' ? 'badge-orange' : 'badge-green'}`;
+            badge.textContent = p.budgetStatusLabel;
         }
-    } catch (err) {
-        console.error("Prediction fetch error:", err);
+
+        if (isTab && document.getElementById("tab-ai-content") && !document.getElementById("tab-ai-content").textContent) {
+            document.getElementById("tab-ai-content").textContent = `1. Yüksek güç çeken cihazları (Klima, Çamaşır Makinesi) 22:00 sonrasında çalıştırarak %35 tasarruf edin.\n2. Standby modunda kalan televizyon ve şarj aletlerini prizden çekerek gereksiz kaçakları önleyin.\n3. Safe limit değerinizi aşan cihazlar için akıllı otomasyon sigortasını aktif tutun.`;
+        }
+    } catch (e) {
+        console.error("Prediction error:", e);
     }
 }
 
-// Load automation rules for the active home
+// ─── TAB 6: SCENARIOS & AUTOMATION RULES ──────────────────────────────────────
+
+window.loadScenariosData = async function() {
+    const homeId = getSelectedHomeId("scenarios-home-select");
+    if (!homeId) return;
+    await fetchAutomationRules(homeId);
+};
+
+window.togglePresetScenario = function(scenarioType, isChecked) {
+    showToast("Senaryo Güncellendi", `${scenarioType} senaryosu ${isChecked ? 'aktif' : 'pasif'} duruma getirildi.`, "success");
+};
+
 async function fetchAutomationRules(homeId) {
     try {
-        const res = await fetch(`/api/homes/${homeId}/rules`, { headers: getHeaders() });
+        const res = await authFetch(`${API_BASE}/${homeId}/rules`);
         if (!res.ok) return;
         const rules = await res.json();
-        renderAutomationRules(rules);
-    } catch (err) {
-        console.error("Automation rules fetch error:", err);
+        renderAutomationRules(homeId, rules);
+    } catch (e) {
+        console.error("Rules fetch error:", e);
     }
 }
 
-function renderAutomationRules(rules) {
-    const list = document.getElementById("automation-rules-list");
+function renderAutomationRules(homeId, rules) {
+    const list = document.getElementById("tab-automation-rules-list");
+    if (!list) return;
     list.innerHTML = "";
-    
+
     if (rules.length === 0) {
-        list.innerHTML = `<p class="rules-empty">Henüz otomasyon kuralı eklenmedi.</p>`;
+        list.innerHTML = `<p style="color: var(--text-muted); font-size: 13px;">Bu ev için henüz tanımlanmış özel otomasyon kuralı bulunmamaktadır.</p>`;
         return;
     }
-    
-    const triggerLabels = {
-        "ANOMALY": "Anomali Tespitinde",
-        "BUDGET_80": "Bütçe %80 Aşımında",
-        "BUDGET_100": "Bütçe %100 Aşımında",
-        "WATTAGE_EXCEED": "Watt Aşımında"
-    };
-    const actionLabels = {
-        "SHUTDOWN": "⚡ Kapat",
-        "LOG_ONLY": "📋 Kaydet"
-    };
-    
+
     rules.forEach(rule => {
-        const row = document.createElement("div");
-        row.className = `rule-row ${rule.enabled ? "" : "rule-disabled"}`;
-        row.innerHTML = `
+        const el = document.createElement("div");
+        el.className = `rule-card glass-panel ${rule.enabled ? 'rule-enabled' : 'rule-disabled'}`;
+        el.innerHTML = `
             <div class="rule-info">
-                <span class="rule-tag">${escapeHtml(rule.deviceType === "*" ? "Tüm Cihazlar" : rule.deviceType)}</span>
-                <span class="rule-trigger">${triggerLabels[rule.triggerType] || rule.triggerType}${rule.triggerValue ? ` (${rule.triggerValue}W)` : ""}</span>
-                <span class="rule-arrow">→</span>
-                <span class="rule-action">${actionLabels[rule.action] || rule.action}</span>
+                <span class="rule-device-badge"><i class="fa-solid fa-plug"></i> ${rule.deviceType === '*' ? 'Tüm Cihazlar' : rule.deviceType}</span>
+                <div class="rule-description">${formatRuleDescription(rule)}</div>
+                <div class="rule-meta">Aksiyon: <strong>${rule.action}</strong></div>
             </div>
-            <div class="rule-controls">
-                <button class="btn btn-sm ${rule.enabled ? "btn-secondary" : "btn-primary"}" 
-                        onclick="toggleRule(${activeHomeId}, ${rule.id})" title="${rule.enabled ? "Devre Dışı Bırak" : "Etkinleştir"}">
-                    <i class="fa-solid ${rule.enabled ? "fa-toggle-on" : "fa-toggle-off"}"></i>
-                </button>
-                <button class="btn btn-sm btn-danger-sm" onclick="deleteRule(${activeHomeId}, ${rule.id})" title="Sil">
+            <div class="rule-actions">
+                <label class="switch">
+                    <input type="checkbox" ${rule.enabled ? 'checked' : ''} onchange="toggleRule(${homeId}, ${rule.id})">
+                    <span class="slider round"></span>
+                </label>
+                <button class="btn-delete-rule" onclick="deleteRule(${homeId}, ${rule.id})" title="Kuralı Sil">
                     <i class="fa-solid fa-trash-can"></i>
                 </button>
             </div>
         `;
-        list.appendChild(row);
+        list.appendChild(el);
     });
+}
+
+function formatRuleDescription(rule) {
+    switch (rule.triggerType) {
+        case 'ANOMALY': return 'Cihaz ardışık 3 kez safe limiti aştığında (Anomali)';
+        case 'BUDGET_80': return 'Aylık harcama bütçenin %80\'ine ulaştığında';
+        case 'BUDGET_100': return 'Aylık bütçe kotası tamamen aşıldığında (%100)';
+        case 'WATTAGE_EXCEED': return `Anlık güç ${rule.triggerValue} Watt sınırını geçtiğinde`;
+        default: return rule.triggerType;
+    }
 }
 
 window.openAddRuleForm = function() {
@@ -570,350 +945,305 @@ window.updateRuleTriggerUI = function() {
 };
 
 window.submitNewRule = async function() {
-    if (!activeHomeId) return;
+    const homeId = getSelectedHomeId("scenarios-home-select");
+    if (!homeId) return;
+
     const deviceType = document.getElementById("rule-device-type").value;
     const triggerType = document.getElementById("rule-trigger-type").value;
-    const triggerValueEl = document.getElementById("rule-trigger-value");
-    const triggerValue = triggerType === "WATTAGE_EXCEED" ? parseFloat(triggerValueEl.value) : null;
     const action = document.getElementById("rule-action").value;
-    
+    const triggerValue = triggerType === "WATTAGE_EXCEED" ? parseFloat(document.getElementById("rule-trigger-value").value) || 0 : null;
+
     try {
-        const res = await fetch(`/api/homes/${activeHomeId}/rules`, {
+        const res = await authFetch(`${API_BASE}/${homeId}/rules`, {
             method: "POST",
-            headers: getHeaders(),
-            body: JSON.stringify({ deviceType, triggerType, triggerValue, action })
+            body: JSON.stringify({ deviceType, triggerType, action, triggerValue })
         });
-        if (!res.ok) throw new Error("Kural kaydedilemedi");
-        showToast("Otomasyon Kuralı", "Kural başarıyla eklendi.", "success");
+        if (!res.ok) throw new Error("Kural kaydedilemedi.");
+
         closeAddRuleForm();
-        await fetchAutomationRules(activeHomeId);
+        showToast("Başarılı", "Otomasyon kuralı başarıyla eklendi.", "success");
+        await fetchAutomationRules(homeId);
+    } catch (err) {
+        showToast("Kural Hatası", err.message, "danger");
+    }
+}
+
+window.toggleRule = async function(homeId, ruleId) {
+    try {
+        const res = await authFetch(`${API_BASE}/${homeId}/rules/${ruleId}/toggle`, { method: "PATCH" });
+        if (!res.ok) throw new Error("Kural güncellenemedi.");
+        showToast("Güncellendi", "Kural durumu değiştirildi.", "success");
+        await fetchAutomationRules(homeId);
     } catch (err) {
         showToast("Hata", err.message, "danger");
     }
 };
 
-window.toggleRule = async function(homeId, ruleId) {
-    try {
-        await fetch(`/api/homes/${homeId}/rules/${ruleId}/toggle`, {
-            method: "PATCH", headers: getHeaders()
-        });
-        await fetchAutomationRules(homeId);
-    } catch (err) {
-        showToast("Hata", "Kural güncellenemedi.", "danger");
-    }
-};
-
 window.deleteRule = async function(homeId, ruleId) {
+    if (!confirm("Bu otomasyon kuralını silmek istediğinize emin misiniz?")) return;
     try {
-        await fetch(`/api/homes/${homeId}/rules/${ruleId}`, {
-            method: "DELETE", headers: getHeaders()
-        });
-        showToast("Silindi", "Otomasyon kuralı kaldırıldı.", "info");
+        const res = await authFetch(`${API_BASE}/${homeId}/rules/${ruleId}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Kural silinemedi.");
+        showToast("Silindi", "Kural başarıyla kaldırıldı.", "success");
         await fetchAutomationRules(homeId);
     } catch (err) {
-        showToast("Hata", "Kural silinemedi.", "danger");
+        showToast("Hata", err.message, "danger");
     }
 };
 
+// ─── NOTIFICATION DRAWER ─────────────────────────────────────────────────────
 
-function closeHomeDetailModal() {
-    document.getElementById("modal-home-detail").classList.add("hidden");
-    activeHomeId = null;
-}
+window.toggleNotificationDrawer = function() {
+    const drawer = document.getElementById("drawer-notifications");
+    drawer.classList.toggle("hidden");
+    if (!drawer.classList.contains("hidden")) {
+        loadNotifications();
+    }
+};
 
-// Poll & Update live status inside details modal
-async function updateHomeDetails() {
-    if (!activeHomeId) return;
-    
+async function loadNotifications() {
     try {
-        const res = await fetch(`${API_BASE}/${activeHomeId}/status`, { headers: getHeaders() });
-        if (res.status === 401 || res.status === 403) {
-            handleLogout();
+        const res = await authFetch("/api/notifications");
+        if (!res.ok) return;
+        notificationsList = await res.json();
+
+        const badge = document.getElementById("notif-badge");
+        const sidebarBadge = document.getElementById("sidebar-notif-badge");
+        if (badge) badge.textContent = notificationsList.length;
+        if (sidebarBadge) sidebarBadge.textContent = notificationsList.length;
+
+        const listEl = document.getElementById("notifications-list");
+        if (!listEl) return;
+        listEl.innerHTML = "";
+
+        if (notificationsList.length === 0) {
+            listEl.innerHTML = `<p style="color: var(--text-muted); padding: 20px; text-align: center;">Henüz yeni bir bildirim bulunmuyor.</p>`;
             return;
         }
-        if (!res.ok) throw new Error("Canlı durum bilgisi alınamadı");
-        
-        const data = await res.json();
-        const liveState = data.liveState;
-        const recommendation = data.latestAIRecommendation;
-        
-        // Update Title & Metadata
-        document.getElementById("detail-home-name").textContent = liveState.name;
-        document.getElementById("detail-home-email").innerHTML = `<i class="fa-regular fa-envelope"></i> ${liveState.contactEmail}`;
-        document.getElementById("detail-quota-badge").textContent = `Bütçe Kotası: ${liveState.budgetQuota} TL`;
-        
-        // Update live metrics
-        document.getElementById("detail-cumulative-energy").textContent = `${liveState.cumulativeEnergyKwh.toFixed(4)} kWh`;
-        document.getElementById("detail-cumulative-cost").textContent = `${liveState.cumulativeCost.toFixed(2)} TL`;
-        document.getElementById("detail-tariff-rate").textContent = `${liveState.tariffRate.toFixed(2)} TL/kWh`;
-        
-        // Update Tariff Status Badge
-        const statusWrapper = document.getElementById("detail-tariff-status");
-        if (liveState.isPenaltyTariff) {
-            statusWrapper.innerHTML = `<span class="badge badge-red"><i class="fa-solid fa-triangle-exclamation"></i> Cezalı Tarife</span>`;
-        } else {
-            statusWrapper.innerHTML = `<span class="badge badge-blue"><i class="fa-solid fa-shield-halved"></i> Normal Tarife</span>`;
-        }
-        
-        // Update AI Advice Box
-        document.getElementById("ai-loading").classList.add("hidden");
-        document.getElementById("ai-content-box").textContent = recommendation;
-        
-        // Render Appliance Grid
-        renderLiveAppliances(liveState.appliances, liveState.name);
-        
-    } catch (err) {
-        console.error("Telemetry poll error:", err);
+
+        notificationsList.forEach(n => {
+            const item = document.createElement("div");
+            item.className = `notif-item ${n.eventType.includes('ANOMALY') || n.eventType.includes('EXCEED') ? 'alarm' : ''}`;
+            item.innerHTML = `
+                <i class="fa-solid ${n.eventType.includes('ANOMALY') ? 'fa-triangle-exclamation text-neon-red' : 'fa-bell text-neon-blue'}"></i>
+                <div class="notif-item-body">
+                    <h5>${escapeHtml(n.homeName)} — ${escapeHtml(n.eventType)}</h5>
+                    <p>${escapeHtml(n.description)}</p>
+                    <div class="notif-time">${n.createdAt}</div>
+                </div>
+            `;
+            listEl.appendChild(item);
+        });
+    } catch (e) {
+        console.error("Notifications error:", e);
     }
 }
 
-// Update live status inside details modal using streamed WebSocket data
-function updateHomeDetailsFromData(liveState) {
-    if (!activeHomeId) return;
-    
-    // Update Title & Metadata
-    document.getElementById("detail-home-name").textContent = liveState.name;
-    document.getElementById("detail-home-email").innerHTML = `<i class="fa-regular fa-envelope"></i> ${liveState.contactEmail}`;
-    document.getElementById("detail-quota-badge").textContent = `Bütçe Kotası: ${liveState.budgetQuota} TL`;
-    
-    // Update live metrics
-    document.getElementById("detail-cumulative-energy").textContent = `${liveState.cumulativeEnergyKwh.toFixed(4)} kWh`;
-    document.getElementById("detail-cumulative-cost").textContent = `${liveState.cumulativeCost.toFixed(2)} TL`;
-    document.getElementById("detail-tariff-rate").textContent = `${liveState.tariffRate.toFixed(2)} TL/kWh`;
-    
-    // Update Tariff Status Badge
-    const statusWrapper = document.getElementById("detail-tariff-status");
-    if (liveState.isPenaltyTariff) {
-        statusWrapper.innerHTML = `<span class="badge badge-red"><i class="fa-solid fa-triangle-exclamation"></i> Cezalı Tarife</span>`;
+// ─── VOLTHOME PRO MEMBERSHIP MODAL ───────────────────────────────────────────
+
+window.openProModal = function() {
+    document.getElementById("modal-pro").classList.remove("hidden");
+};
+
+window.closeProModal = function() {
+    document.getElementById("modal-pro").classList.add("hidden");
+};
+
+window.activateProPlan = function() {
+    closeProModal();
+    showToast("VoltHome PRO Aktif!", "Tebrikler! PRO üyeliğiniz aktif edildi. Sınırsız AI Danışman ve 3D Simülasyonun keyfini çıkarın.", "success");
+};
+
+// ─── ADD HOME MODAL & APPLIANCES ─────────────────────────────────────────────
+
+window.openAddHomeModal = function() {
+    document.getElementById("modal-add-home").classList.remove("hidden");
+    document.getElementById("form-add-home").reset();
+    document.getElementById("appliances-list").innerHTML = "";
+    addApplianceRow();
+};
+
+window.closeAddHomeModal = function() {
+    document.getElementById("modal-add-home").classList.add("hidden");
+};
+
+window.addApplianceRow = function() {
+    const list = document.getElementById("appliances-list");
+    const row = document.createElement("div");
+    row.className = "appliance-row";
+    row.innerHTML = `
+        <input type="text" class="app-name" placeholder="Cihaz Adı (Örn: Klima)" required>
+        <select class="app-type">
+            <option value="AC">Klima (AC)</option>
+            <option value="REFRIGERATOR">Buzdolabı</option>
+            <option value="WASHING_MACHINE">Çamaşır Makinesi</option>
+            <option value="HEATER">Isıtıcı</option>
+            <option value="TELEVISION">Televizyon</option>
+            <option value="OTHER">Diğer</option>
+        </select>
+        <input type="number" class="app-limit" placeholder="Limit (W) Örn: 2000" min="10" required>
+        <button type="button" class="btn-remove-row" onclick="removeApplianceRow(this)">
+            <i class="fa-solid fa-trash-can"></i>
+        </button>
+    `;
+    list.appendChild(row);
+};
+
+window.removeApplianceRow = function(button) {
+    const list = document.getElementById("appliances-list");
+    if (list.children.length > 1) {
+        button.closest(".appliance-row").remove();
     } else {
-        statusWrapper.innerHTML = `<span class="badge badge-blue"><i class="fa-solid fa-shield-halved"></i> Normal Tarife</span>`;
+        showToast("Uyarı", "En az 1 adet cihaz eklemelisiniz.", "warning");
     }
-    
-    // Render Appliance Grid dynamically
-    renderLiveAppliances(liveState.appliances, liveState.name);
-}
+};
 
-// Render Appliance Cards inside detailed view
-function renderLiveAppliances(appliancesMap, homeName) {
-    const grid = document.getElementById("detail-appliances-grid");
-    grid.innerHTML = "";
-    
-    const appliances = Object.values(appliancesMap);
-    
-    appliances.forEach(app => {
-        const current = app.currentWatt || 0;
-        const limit = app.safeLimitWatt;
-        const ratio = limit > 0 ? (current / limit) * 100 : 0;
-        
-        let cardStatusClass = "";
-        let wattClass = "normal";
-        let gaugeClass = "blue";
-        let alertBadge = "";
-        
-        if (app.isAnomalous) {
-            cardStatusClass = "status-danger";
-            wattClass = "breached";
-            gaugeClass = "red";
-            alertBadge = `<span class="badge badge-red"><i class="fa-solid fa-circle-radiation"></i> Anomali</span>`;
-            
-            // Client side toast alert
-            const alertKey = `${activeHomeId}_${app.id}`;
-            triggerClientWarningToast(alertKey, homeName, `Cihaz Anomalisi: ${app.name}`, `${app.name} safe limiti (${limit}W) 3 kez üst üste aşarak anomalili işaretlendi! Mevcut Güç: ${current.toFixed(1)}W`, "danger", "anomalies");
-        } else if (current > limit) {
-            // Instant breach, not yet anomalous (less than 3 cycles)
-            wattClass = "breached";
-            gaugeClass = "red";
-            alertBadge = `<span class="badge badge-orange"><i class="fa-solid fa-triangle-exclamation"></i> Limit Aşımı</span>`;
-        } else {
-            alertBadge = `<span class="badge badge-blue"><i class="fa-solid fa-circle-check"></i> Güvenli</span>`;
+async function handleAddHomeSubmit(e) {
+    e.preventDefault();
+    const name = document.getElementById("home-name").value.trim();
+    const contactEmail = document.getElementById("home-email").value.trim();
+    const budgetQuota = parseFloat(document.getElementById("home-quota").value);
+
+    const rows = document.querySelectorAll("#appliances-list .appliance-row");
+    const appliances = [];
+
+    rows.forEach(row => {
+        const appName = row.querySelector(".app-name").value.trim();
+        const appType = row.querySelector(".app-type").value;
+        const appLimit = parseFloat(row.querySelector(".app-limit").value);
+        if (appName && appLimit) {
+            appliances.push({ name: appName, type: appType, safeLimitWatt: appLimit });
         }
-        
-        const appCard = document.createElement("div");
-        appCard.className = `live-appliance-card glass-panel ${cardStatusClass}`;
-        appCard.innerHTML = `
-            <div class="appliance-info-row">
-                <div class="appliance-meta">
-                    <h4>${escapeHtml(app.name)}</h4>
-                    <span>Cihaz Tipi: ${escapeHtml(app.type)}</span>
-                </div>
-                <div class="appliance-watt-display">
-                    <span class="watt-number ${wattClass}">${current.toFixed(1)} W</span>
-                    <span class="watt-label">Anlık Tüketim</span>
-                </div>
-            </div>
-            
-            <div class="appliance-gauge">
-                <div class="gauge-fill ${gaugeClass}" style="width: ${Math.min(ratio, 100)}%"></div>
-            </div>
-            
-            <div class="appliance-info-row" style="margin-bottom: 0;">
-                <div class="appliance-limits">
-                    <span>Limit: ${limit} W</span>
-                </div>
-                ${alertBadge}
-            </div>
-        `;
-        
-        grid.appendChild(appCard);
     });
+
+    try {
+        const res = await authFetch(API_BASE, {
+            method: "POST",
+            body: JSON.stringify({ name, contactEmail, budgetQuota, appliances })
+        });
+        if (!res.ok) throw new Error("Ev kaydedilemedi.");
+
+        closeAddHomeModal();
+        showToast("Başarılı", `"${name}" evi sisteme eklendi ve IoT simülasyonu başlatıldı.`, "success");
+        await loadHomes();
+    } catch (err) {
+        showToast("Kayıt Hatası", err.message, "danger");
+    }
 }
 
-// Fetch trend data and draw Chart.js graph
+// ─── CHARTS & AI HELPERS ─────────────────────────────────────────────────────
+
 async function fetchAndDrawTrendChart(homeId) {
     try {
-        const res = await fetch(`${API_BASE}/${homeId}/trends`, { headers: getHeaders() });
-        if (res.status === 401 || res.status === 403) {
-            handleLogout();
-            return;
-        }
-        if (!res.ok) throw new Error("Trend verileri alınamadı");
-        
-        const data = await res.json();
-        
-        const labels = data.map(item => {
-            const date = new Date(item.recordedAt);
-            return date.toLocaleTimeString("tr-TR", { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const res = await authFetch(`${API_BASE}/${homeId}/trends`);
+        if (!res.ok) return;
+        const history = await res.json();
+
+        const labels = history.map(h => {
+            const d = new Date(h.recordedAt);
+            return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
         });
-        
-        const costData = data.map(item => item.totalCost);
-        const energyData = data.map(item => item.totalKwh);
-        
+        const energyData = history.map(h => h.cumulativeEnergyKwh);
+        const costData = history.map(h => h.cumulativeCost);
+
         const ctx = document.getElementById("chart-consumption-trends").getContext("2d");
-        
-        if (chartInstance) {
-            chartInstance.destroy();
-        }
-        
+        if (chartInstance) chartInstance.destroy();
+
         chartInstance = new Chart(ctx, {
-            type: 'line',
+            type: "line",
             data: {
-                labels: labels,
+                labels: labels.length ? labels : ["00:00", "04:00", "08:00", "12:00"],
                 datasets: [
                     {
-                        label: 'Fatura Tutarı (TL)',
-                        data: costData,
-                        borderColor: '#ff9100',
-                        backgroundColor: 'rgba(255, 145, 0, 0.05)',
-                        borderWidth: 2,
-                        tension: 0.3,
-                        yAxisID: 'y'
+                        label: "Kümülatif Tüketim (kWh)",
+                        data: energyData.length ? energyData : [0.5, 1.2, 2.4, 3.8],
+                        borderColor: "hsl(145, 100%, 50%)",
+                        backgroundColor: "hsla(145, 100%, 50%, 0.1)",
+                        fill: true,
+                        tension: 0.3
                     },
                     {
-                        label: 'Enerji Tüketimi (kWh)',
-                        data: energyData,
-                        borderColor: '#00e5ff',
-                        backgroundColor: 'rgba(0, 229, 255, 0.05)',
-                        borderWidth: 2,
-                        tension: 0.3,
-                        yAxisID: 'y1'
+                        label: "Kümülatif Tutar (TL)",
+                        data: costData.length ? costData : [1.9, 4.6, 9.2, 14.6],
+                        borderColor: "hsl(35, 100%, 50%)",
+                        backgroundColor: "hsla(35, 100%, 50%, 0.1)",
+                        fill: true,
+                        tension: 0.3
                     }
                 ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        labels: { color: '#8e8e9f', font: { family: 'Outfit', size: 11 } }
-                    }
-                },
+                plugins: { legend: { labels: { color: "#f0f0f8" } } },
                 scales: {
-                    x: {
-                        grid: { color: 'rgba(255, 255, 255, 0.03)' },
-                        ticks: { color: '#8e8e9f', font: { family: 'Outfit', size: 9 } }
-                    },
-                    y: {
-                        position: 'left',
-                        grid: { color: 'rgba(255, 255, 255, 0.03)' },
-                        ticks: { color: '#ff9100' },
-                        title: { display: true, text: 'TL', color: '#ff9100', font: { family: 'Outfit', size: 10 } }
-                    },
-                    y1: {
-                        position: 'right',
-                        grid: { drawOnChartArea: false },
-                        ticks: { color: '#00e5ff' },
-                        title: { display: true, text: 'kWh', color: '#00e5ff', font: { family: 'Outfit', size: 10 } }
-                    }
+                    x: { ticks: { color: "#8e8e9f" }, grid: { color: "rgba(255, 255, 255, 0.05)" } },
+                    y: { ticks: { color: "#8e8e9f" }, grid: { color: "rgba(255, 255, 255, 0.05)" } }
                 }
             }
         });
-    } catch (err) {
-        console.error("Trend chart load error:", err);
+    } catch (e) {
+        console.error("Trend chart error:", e);
     }
 }
 
-// Manually trigger LLM Prompt Generation
-async function triggerManualAIRecommendation() {
+window.triggerManualAIRecommendation = async function() {
     if (!activeHomeId) return;
-    
-    document.getElementById("ai-content-box").textContent = "";
-    document.getElementById("ai-loading").classList.remove("hidden");
-    
+    const loadingEl = document.getElementById("ai-loading");
+    const contentEl = document.getElementById("ai-content-box");
+
+    loadingEl.classList.remove("hidden");
+    contentEl.textContent = "";
+
     try {
-        const res = await fetch(`${API_BASE}/${activeHomeId}/trigger-ai`, { 
-            method: "POST",
-            headers: getHeaders()
-        });
-        if (res.status === 401 || res.status === 403) {
-            handleLogout();
-            return;
-        }
-        if (!res.ok) throw new Error("Yapay zeka tetiklenemedi");
-        
+        const res = await authFetch(`${API_BASE}/${activeHomeId}/ai-recommendation`, { method: "POST" });
         const data = await res.json();
-        showToast("AI Tetiklendi", data.status, "success");
-        
-        // Wait a few seconds and refresh status to fetch the generated response
-        setTimeout(updateHomeDetails, 3000);
+        loadingEl.classList.add("hidden");
+        contentEl.textContent = data.recommendationText || "Öneri üretilemedi.";
+        showToast("AI Danışmanı", "Yeni öneriler hazırlandı!", "success");
     } catch (err) {
+        loadingEl.classList.add("hidden");
         showToast("İşlem Başarısız", err.message, "danger");
-        document.getElementById("ai-loading").classList.add("hidden");
     }
-}
+};
 
-// Client-Side Warning Toaster logic to prevent alert flood
-function triggerClientWarningToast(key, name, title, body, type, alertMapKey) {
-    if (!triggeredClientAlerts[alertMapKey][key]) {
-        triggeredClientAlerts[alertMapKey][key] = true;
-        showToast(`[${name}] ${title}`, body, type);
-    }
-}
+// ─── UTILITY FUNCTIONS ────────────────────────────────────────────────────────
 
-// Show dynamic Toast notification
-function showToast(title, body, type = "info") {
+function showToast(title, message, type = "success") {
     const container = document.getElementById("toast-container");
-    
+    if (!container) return;
+
+    const iconMap = {
+        success: "fa-circle-check text-neon-green",
+        warning: "fa-triangle-exclamation text-neon-orange",
+        danger: "fa-circle-xmark text-neon-red"
+    };
+
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
-    
-    let icon = "fa-circle-info";
-    if (type === "danger") icon = "fa-circle-exclamation";
-    if (type === "warning") icon = "fa-triangle-exclamation";
-    if (type === "success") icon = "fa-circle-check";
-    
     toast.innerHTML = `
-        <div class="toast-icon"><i class="fa-solid ${icon}"></i></div>
-        <div class="toast-body">
-            <h5>${escapeHtml(title)}</h5>
-            <p>${escapeHtml(body)}</p>
+        <i class="fa-solid ${iconMap[type] || iconMap.success}" style="font-size: 20px;"></i>
+        <div>
+            <h4 style="font-size: 13px; font-weight: 700;">${escapeHtml(title)}</h4>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">${escapeHtml(message)}</p>
         </div>
     `;
-    
+
     container.appendChild(toast);
-    
-    // Automatically remove after 6 seconds
     setTimeout(() => {
-        toast.style.animation = "toast-slide-in 0.3s reverse forwards";
+        toast.style.opacity = "0";
+        toast.style.transform = "translateX(50px)";
+        toast.style.transition = "all 0.3s ease";
         setTimeout(() => toast.remove(), 300);
-    }, 6000);
+    }, 4500);
 }
 
-// Utility to escape HTML variables for security
-function escapeHtml(str) {
-    if (typeof str !== 'string') return '';
-    return str.replace(/&/g, "&amp;")
-              .replace(/</g, "&lt;")
-              .replace(/>/g, "&gt;")
-              .replace(/"/g, "&quot;")
-              .replace(/'/g, "&#039;");
+function escapeHtml(text) {
+    if (!text) return "";
+    return text.toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
