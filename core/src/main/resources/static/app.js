@@ -654,16 +654,16 @@ window.loadAnalyticsData = async function() {
                     {
                         label: "Kümülatif Tüketim (kWh)",
                         data: energyData.length ? energyData : [0.5, 1.2, 2.4, 3.8, 5.2, 6.7],
-                        borderColor: "hsl(145, 100%, 50%)",
-                        backgroundColor: "hsla(145, 100%, 50%, 0.1)",
+                        borderColor: "#059669",
+                        backgroundColor: "rgba(5, 150, 105, 0.08)",
                         fill: true,
                         tension: 0.4
                     },
                     {
                         label: "Kümülatif Tutar (TL)",
                         data: costData.length ? costData : [1.9, 4.6, 9.2, 14.6, 20.0, 25.8],
-                        borderColor: "hsl(35, 100%, 50%)",
-                        backgroundColor: "hsla(35, 100%, 50%, 0.1)",
+                        borderColor: "#0284c7",
+                        backgroundColor: "rgba(2, 132, 199, 0.08)",
                         fill: true,
                         tension: 0.4
                     }
@@ -672,10 +672,10 @@ window.loadAnalyticsData = async function() {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { labels: { color: "#f0f0f8" } } },
+                plugins: { legend: { labels: { color: "#0f172a", font: { weight: "600" } } } },
                 scales: {
-                    x: { ticks: { color: "#8e8e9f" }, grid: { color: "rgba(255, 255, 255, 0.05)" } },
-                    y: { ticks: { color: "#8e8e9f" }, grid: { color: "rgba(255, 255, 255, 0.05)" } }
+                    x: { ticks: { color: "#64748b" }, grid: { color: "rgba(0, 0, 0, 0.05)" } },
+                    y: { ticks: { color: "#64748b" }, grid: { color: "rgba(0, 0, 0, 0.05)" } }
                 }
             }
         });
@@ -691,11 +691,11 @@ window.loadAnalyticsData = async function() {
                 datasets: [{
                     data: [42, 24, 18, 11, 5],
                     backgroundColor: [
-                        "hsl(185, 100%, 50%)",
-                        "hsl(145, 100%, 50%)",
-                        "hsl(35, 100%, 50%)",
-                        "hsl(348, 100%, 55%)",
-                        "hsl(272, 100%, 65%)"
+                        "#059669",
+                        "#10b981",
+                        "#0284c7",
+                        "#d97706",
+                        "#94a3b8"
                     ],
                     borderWidth: 0
                 }]
@@ -703,7 +703,7 @@ window.loadAnalyticsData = async function() {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { position: "bottom", labels: { color: "#f0f0f8" } } }
+                plugins: { legend: { position: "bottom", labels: { color: "#0f172a", font: { weight: "500" } } } }
             }
         });
     } catch (err) {
@@ -1157,16 +1157,16 @@ async function fetchAndDrawTrendChart(homeId) {
                     {
                         label: "Kümülatif Tüketim (kWh)",
                         data: energyData.length ? energyData : [0.5, 1.2, 2.4, 3.8],
-                        borderColor: "hsl(145, 100%, 50%)",
-                        backgroundColor: "hsla(145, 100%, 50%, 0.1)",
+                        borderColor: "#059669",
+                        backgroundColor: "rgba(5, 150, 105, 0.08)",
                         fill: true,
                         tension: 0.3
                     },
                     {
                         label: "Kümülatif Tutar (TL)",
                         data: costData.length ? costData : [1.9, 4.6, 9.2, 14.6],
-                        borderColor: "hsl(35, 100%, 50%)",
-                        backgroundColor: "hsla(35, 100%, 50%, 0.1)",
+                        borderColor: "#0284c7",
+                        backgroundColor: "rgba(2, 132, 199, 0.08)",
                         fill: true,
                         tension: 0.3
                     }
@@ -1175,10 +1175,10 @@ async function fetchAndDrawTrendChart(homeId) {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { labels: { color: "#f0f0f8" } } },
+                plugins: { legend: { labels: { color: "#0f172a", font: { weight: "600" } } } },
                 scales: {
-                    x: { ticks: { color: "#8e8e9f" }, grid: { color: "rgba(255, 255, 255, 0.05)" } },
-                    y: { ticks: { color: "#8e8e9f" }, grid: { color: "rgba(255, 255, 255, 0.05)" } }
+                    x: { ticks: { color: "#64748b" }, grid: { color: "rgba(0, 0, 0, 0.05)" } },
+                    y: { ticks: { color: "#64748b" }, grid: { color: "rgba(0, 0, 0, 0.05)" } }
                 }
             }
         });
