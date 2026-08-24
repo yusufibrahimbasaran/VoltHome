@@ -307,6 +307,97 @@ public class EnergyController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
+    // ─── Preset Smart Scenarios ────────────────────────────────────────────────
+
+    @PostMapping("/api/homes/{homeId}/preset-scenarios")
+    @Operation(summary = "Toggle preset smart scenario", description = "Synchronizes predefined smart scenarios with automation rules table")
+    public ResponseEntity<Map<String, Object>> togglePresetScenario(@PathVariable Long homeId,
+                                                                    @RequestBody Map<String, Object> payload) {
+        String username = getUsername();
+        Home home = homeService.getHomeById(homeId);
+        if (home == null || home.getUser() == null || !home.getUser().getUsername().equals(username)) {
+            return ResponseEntity.status(403).build();
+        }
+
+        String scenarioType = (String) payload.get("scenarioType");
+        boolean enabled = Boolean.TRUE.equals(payload.get("enabled"));
+
+        String triggerType;
+        switch (scenarioType) {
+            case "NIGHT_ECO":
+                triggerType = "NIGHT_ECO";
+                break;
+            case "PEAK_TARIFF":
+                triggerType = "PEAK_TARIFF";
+                break;
+            case "ANOMALY_SAFE":
+                triggerType = "ANOMALY";
+                break;
+            case "BUDGET_80_LOCK":
+                triggerType = "BUDGET_80";
+                break;
+            default:
+                triggerType = scenarioType;
+                break;
+        }
+
+        List<AutomationRule> existing = automationRuleRepository.findByHomeId(homeId);
+        AutomationRule target = null;
+        for (AutomationRule r : existing) {
+            if (triggerType.equals(r.getTriggerType())) {
+                target = r;
+                break;
+            }
+        }
+
+        if (target == null) {
+            target = AutomationRule.builder()
+                    .home(home)
+                    .deviceType("*")
+                    .triggerType(triggerType)
+                    .action("SHUTDOWN")
+                    .triggerValue(null)
+                    .enabled(enabled)
+                    .createdAt(LocalDateTime.now())
+                    .build();
+        } else {
+            target.setEnabled(enabled);
+        }
+        automationRuleRepository.save(target);
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("status", "SUCCESS");
+        resp.put("scenarioType", scenarioType);
+        resp.put("enabled", enabled);
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/api/homes/{homeId}/preset-scenarios")
+    @Operation(summary = "Get preset smart scenario states", description = "Returns active state for preset smart scenarios")
+    public ResponseEntity<Map<String, Boolean>> getPresetScenarios(@PathVariable Long homeId) {
+        String username = getUsername();
+        Home home = homeService.getHomeById(homeId);
+        if (home == null || home.getUser() == null || !home.getUser().getUsername().equals(username)) {
+            return ResponseEntity.status(403).build();
+        }
+
+        List<AutomationRule> existing = automationRuleRepository.findByHomeId(homeId);
+        Map<String, Boolean> states = new HashMap<>();
+        states.put("NIGHT_ECO", true);
+        states.put("PEAK_TARIFF", true);
+        states.put("ANOMALY_SAFE", true);
+        states.put("BUDGET_80_LOCK", true);
+
+        for (AutomationRule r : existing) {
+            if ("NIGHT_ECO".equals(r.getTriggerType())) states.put("NIGHT_ECO", Boolean.TRUE.equals(r.getEnabled()));
+            if ("PEAK_TARIFF".equals(r.getTriggerType())) states.put("PEAK_TARIFF", Boolean.TRUE.equals(r.getEnabled()));
+            if ("ANOMALY".equals(r.getTriggerType())) states.put("ANOMALY_SAFE", Boolean.TRUE.equals(r.getEnabled()));
+            if ("BUDGET_80".equals(r.getTriggerType())) states.put("BUDGET_80_LOCK", Boolean.TRUE.equals(r.getEnabled()));
+        }
+
+        return ResponseEntity.ok(states);
+    }
+
     private String getUsername() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         return auth.getName();

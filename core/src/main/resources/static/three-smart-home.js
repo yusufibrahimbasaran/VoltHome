@@ -342,7 +342,9 @@ function toggleApplianceState(applianceGroup) {
         data.ringMesh.material.color.setHex(data.isOn ? 0x10b981 : 0x94a3b8);
     }
 
-    if (window.showToast) {
+    if (window.handle3dApplianceToggle) {
+        window.handle3dApplianceToggle(data.applianceId, !data.isOn, data.name);
+    } else if (window.showToast) {
         window.showToast(
             "3D Cihaz Kontrolü",
             `${data.name} ${data.isOn ? 'açıldı (ON)' : 'kapatıldı (OFF)'}.`,

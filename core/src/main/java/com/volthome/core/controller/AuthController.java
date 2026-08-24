@@ -111,6 +111,47 @@ public class AuthController {
         }
     }
 
+    @PostMapping("/upgrade-pro")
+    public ResponseEntity<?> upgradeToPro() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return ResponseEntity.status(401).build();
+        }
+        String username = auth.getName();
+        User user = userRepository.findByUsername(username).orElse(null);
+        if (user == null) {
+            return ResponseEntity.notFound().build();
+        }
+        user.setRole("PRO");
+        userRepository.save(user);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "SUCCESS");
+        response.put("role", "PRO");
+        response.put("username", user.getUsername());
+        response.put("email", user.getEmail());
+        response.put("message", "VoltHome PRO aboneliğiniz başarıyla aktif edildi!");
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<?> getCurrentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return ResponseEntity.status(401).build();
+        }
+        String username = auth.getName();
+        User user = userRepository.findByUsername(username).orElse(null);
+        if (user == null) {
+            return ResponseEntity.notFound().build();
+        }
+        Map<String, Object> response = new HashMap<>();
+        response.put("username", user.getUsername());
+        response.put("email", user.getEmail());
+        response.put("role", user.getRole());
+        return ResponseEntity.ok(response);
+    }
+
     // Inner classes for DTOs
     public static class LoginRequest {
         private String username;

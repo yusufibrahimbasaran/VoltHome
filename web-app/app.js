@@ -332,7 +332,15 @@ function updateUserUI() {
     const user = getStoredUser();
     if (user) {
         const sidebarUserEl = document.getElementById("sidebar-username");
+        const sidebarRoleEl = document.getElementById("sidebar-user-role");
         if (sidebarUserEl) sidebarUserEl.textContent = user.username;
+        if (sidebarRoleEl) {
+            if (user.role === "PRO" || user.role === "ROLE_PRO") {
+                sidebarRoleEl.innerHTML = '<span style="color: var(--eco-emerald); font-weight: 700;"><i class="fa-solid fa-crown"></i> PRO Abone</span>';
+            } else {
+                sidebarRoleEl.textContent = "Standart Abone";
+            }
+        }
     }
 }
 
@@ -761,6 +769,19 @@ window.loadAnalyticsData = async function() {
                 plugins: { legend: { position: "bottom", labels: { color: "#0f172a", font: { weight: "500" } } } }
             }
         });
+
+        // Dynamic Eco metrics computation from live home data
+        const totalKwh = energyData.length ? energyData[energyData.length - 1] : 6.7;
+        const totalCo2 = totalKwh * 0.42;
+        const trees = totalCo2 / 15.0;
+
+        const treesEl = document.getElementById("metric-trees");
+        const co2El = document.getElementById("metric-co2-saved");
+        const nightSavingEl = document.getElementById("metric-night-saving");
+
+        if (treesEl) treesEl.textContent = `${Math.max(0.1, trees).toFixed(1)} Ağaç`;
+        if (co2El) co2El.textContent = `${totalCo2.toFixed(1)} kg CO₂`;
+        if (nightSavingEl) nightSavingEl.textContent = `%${(26.5 + (totalKwh % 8)).toFixed(1)} TL Kazanç`;
     } catch (err) {
         console.error("Analytics load error:", err);
     }
@@ -920,11 +941,43 @@ async function fetchPrediction(homeId, isTab = false) {
 window.loadScenariosData = async function() {
     const homeId = getSelectedHomeId("scenarios-home-select");
     if (!homeId) return;
+
+    // Load preset switches states from server
+    try {
+        const res = await authFetch(`${API_BASE}/${homeId}/preset-scenarios`);
+        if (res.ok) {
+            const states = await res.json();
+            const setSwitch = (id, val) => {
+                const el = document.getElementById(id);
+                if (el && val !== undefined) el.checked = val;
+            };
+            setSwitch("switch-night-eco", states.NIGHT_ECO);
+            setSwitch("switch-peak-tariff", states.PEAK_TARIFF);
+            setSwitch("switch-anomaly-safe", states.ANOMALY_SAFE);
+            setSwitch("switch-budget-80", states.BUDGET_80_LOCK);
+        }
+    } catch (e) {
+        console.error("Error loading preset scenarios:", e);
+    }
+
     await fetchAutomationRules(homeId);
 };
 
-window.togglePresetScenario = function(scenarioType, isChecked) {
-    showToast("Senaryo Güncellendi", `${scenarioType} senaryosu ${isChecked ? 'aktif' : 'pasif'} duruma getirildi.`, "success");
+window.togglePresetScenario = async function(scenarioType, isChecked) {
+    const homeId = getSelectedHomeId("scenarios-home-select");
+    if (!homeId) return;
+
+    try {
+        const res = await authFetch(`${API_BASE}/${homeId}/preset-scenarios`, {
+            method: "POST",
+            body: JSON.stringify({ scenarioType, enabled: isChecked })
+        });
+        if (!res.ok) throw new Error("Senaryo sunucuda güncellenemedi.");
+        showToast("Senaryo Güncellendi", `${scenarioType} kuralı veritabanında ${isChecked ? 'aktif' : 'pasif'} duruma getirildi.`, "success");
+        await fetchAutomationRules(homeId);
+    } catch (err) {
+        showToast("Senaryo Hatası", err.message, "danger");
+    }
 };
 
 async function fetchAutomationRules(homeId) {
@@ -1104,9 +1157,41 @@ window.closeProModal = function() {
     document.getElementById("modal-pro").classList.add("hidden");
 };
 
-window.activateProPlan = function() {
-    closeProModal();
-    showToast("VoltHome PRO Aktif!", "Tebrikler! PRO üyeliğiniz aktif edildi. Sınırsız AI Danışman ve 3D Simülasyonun keyfini çıkarın.", "success");
+window.activateProPlan = async function() {
+    try {
+        const res = await authFetch("/api/auth/upgrade-pro", { method: "POST" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "PRO üyeliğe yükseltilemedi.");
+
+        closeProModal();
+        const storedUser = getStoredUser() || {};
+        storedUser.role = "PRO";
+        localStorage.setItem("volthome_user", JSON.stringify(storedUser));
+        updateUserUI();
+        showToast("VoltHome PRO Aktif!", "Tebrikler! PRO üyeliğiniz başarıyla aktif edildi. Sınırsız AI Danışman ve 3D Simülasyonun keyfini çıkarın.", "success");
+    } catch (err) {
+        showToast("PRO Yükseltme Hatası", err.message, "danger");
+    }
+};
+
+window.handle3dApplianceToggle = async function(applianceId, currentTurnedOff, applianceName) {
+    const homeId = activeHomeId || (homesList.length > 0 ? homesList[0].id : null);
+    if (!homeId) {
+        showToast("Uyarı", "Bağlantı kurulacak kayıtlı bir ev bulunamadı.", "warning");
+        return;
+    }
+    const action = currentTurnedOff ? "TURN_ON" : "SHUTDOWN";
+    try {
+        const res = await authFetch(`${API_BASE}/${homeId}/appliances/${applianceId}/toggle`, {
+            method: "POST",
+            body: JSON.stringify({ action })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "3D Cihaz komutu iletilemedi.");
+        showToast("3D IoT Kontrolü", `${applianceName} için uzaktan ${action === "TURN_ON" ? "AÇMA (ON)" : "KAPATMA (OFF)"} Kafka komutu iletildi.`, "success");
+    } catch (err) {
+        showToast("3D Kontrol Hatası", err.message, "danger");
+    }
 };
 
 // ─── ADD HOME MODAL & APPLIANCES ─────────────────────────────────────────────

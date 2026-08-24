@@ -641,7 +641,7 @@
                                 <p>23:00 - 06:00 saatleri arasında beklemedeki prizleri kapatır.</p>
                             </div>
                             <label class="switch">
-                                <input type="checkbox" checked onchange="togglePresetScenario('NIGHT_ECO', this.checked)">
+                                <input type="checkbox" id="switch-night-eco" checked onchange="togglePresetScenario('NIGHT_ECO', this.checked)">
                                 <span class="slider round"></span>
                             </label>
                         </div>
@@ -653,7 +653,7 @@
                                 <p>17:00 - 22:00 pik tarife saatlerinde aşırı yük çekimini sınırlar.</p>
                             </div>
                             <label class="switch">
-                                <input type="checkbox" checked onchange="togglePresetScenario('PEAK_TARIFF', this.checked)">
+                                <input type="checkbox" id="switch-peak-tariff" checked onchange="togglePresetScenario('PEAK_TARIFF', this.checked)">
                                 <span class="slider round"></span>
                             </label>
                         </div>
@@ -665,7 +665,7 @@
                                 <p>Safe limitini aşan cihazları anında şebekeden keser.</p>
                             </div>
                             <label class="switch">
-                                <input type="checkbox" checked onchange="togglePresetScenario('ANOMALY_SAFE', this.checked)">
+                                <input type="checkbox" id="switch-anomaly-safe" checked onchange="togglePresetScenario('ANOMALY_SAFE', this.checked)">
                                 <span class="slider round"></span>
                             </label>
                         </div>
@@ -677,7 +677,7 @@
                                 <p>Kota %80 sınırına ulaştığında tasarruf moduna geçer.</p>
                             </div>
                             <label class="switch">
-                                <input type="checkbox" checked onchange="togglePresetScenario('BUDGET_80_LOCK', this.checked)">
+                                <input type="checkbox" id="switch-budget-80" checked onchange="togglePresetScenario('BUDGET_80_LOCK', this.checked)">
                                 <span class="slider round"></span>
                             </label>
                         </div>
